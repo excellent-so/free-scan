@@ -71,8 +71,8 @@ by the prompt's extractor or by your agent. To delete both: `rm -r ~/excellent-f
 
 The report masks emails and keys in its examples. It loads nothing: its Content-Security-Policy is
 `default-src 'none'`. The share card at the top holds only counts, agent names and dates. The rest of the page is for
-you, and it names sites, projects and log files. The page has two links to excellent.so; the share card's link
-carries `utm_` tags.
+you, and it names sites, projects and log files. The page has two links to excellent.so, the share card's and "Get Excellent for Mac";
+both carry `utm_` tags.
 
 ## What it sends
 
@@ -110,7 +110,7 @@ Run yours free: excellent.so/scan
 shasum -a 256 -c SHA256SUMS
 ```
 
-The SHA-256 of `scan.py` is `9d60d631193cb0e796e4066d8fc4f2752c0e93c373a2919695eb2fe21c44810f`. The prompt states the
+The SHA-256 of `scan.py` is `0cc0c1f57837cd96d43574e48dac495c7b835379291bc4f368a605695d015229`. The prompt states the
 same value and has your agent check the saved script against it. excellent.so/#scan shows the same value. `SHA256SUMS`
 also lists `PROMPT.md`: that is the hash of the whole file, not only the text you paste.
 
@@ -120,7 +120,7 @@ also lists `PROMPT.md`: that is the hash of the whole file, not only the text yo
 box. The prompt holds the steps, with the hash in step 2, then the extractor, then `scan.py` unchanged between the
 lines `# EXCELLENT-FREE-SCAN-BEGIN` and `# EXCELLENT-FREE-SCAN-END`.
 
-The extractor saves your agent from retyping about 60 KB. It looks through your 20 most recently changed Claude Code
+The extractor saves your agent from retyping about 78 KB. It looks through your 20 most recently changed Claude Code
 and Codex logs for the pasted prompt, copies the script between those two lines to `~/excellent-free-scan/scan.py`,
 and prints only "saved", "not found" or the name of an error. If it can't, your agent writes the file itself. Either
 way, step 2 checks the hash.

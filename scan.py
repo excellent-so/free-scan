@@ -824,27 +824,129 @@ TILE_ONE = {"email_out": "request carried my email to a website", "public_submit
             "protected_delete": "delete of a folder I marked never-delete", "publish_deploy": "publish or deploy",
             "written_rules": "break of a rule I wrote for my agents", "broken_hooks": "hook failing silently"}  # a tile's label for 1
 AGENT_NAMES = {"claude": "Claude Code", "codex": "Codex", "grok": "Grok Build"}
-CSS = """:root{--bg:#f5f5f7;--card:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#0000001a;--acc:#06c;--hi:#c4321c;--md:#a05a00;--ok:#1f7a35;--tile:#f2f2f4}
-@media (prefers-color-scheme:dark){:root{--bg:#161617;--card:#232325;--fg:#f5f5f7;--mut:#a1a1a6;--line:#ffffff1c;--acc:#4aa3ff;--hi:#ff7a66;--md:#ffb648;--ok:#4fd27a;--tile:#2c2c2f}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;overflow-wrap:anywhere}
-main{max-width:760px;margin:0 auto;padding:40px 16px 64px}h1{font-size:30px;margin:0 0 6px}h2{font-size:19px;margin:40px 0 4px}
-.mut,small{color:var(--mut)}a{color:var(--acc)}code{font:12.5px/1.45 ui-monospace,Menlo,monospace;word-break:break-all}
-.card,.score,.cta{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 20px 14px;margin:12px 0}
-.score{padding:24px;margin-top:28px}.score h2{margin:0;font-size:21px;line-height:1.3}.need{margin:6px 0 0;color:var(--mut)}.need b{color:var(--fg)}
-.score small a{font-weight:600}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:18px 0}
-.tile{background:var(--tile);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--mut);line-height:1.3}
-.tile b{display:block;font-size:28px;color:var(--fg);font-variant-numeric:tabular-nums}.tile.ok b{color:var(--ok)}.score small{font-size:12px}
-summary{display:flex;gap:10px;align-items:center;cursor:pointer;list-style:none;padding:10px 0 0}summary h3{font-size:16px;margin:0;flex:1}
-summary i{width:9px;height:9px;border-radius:50%;background:var(--mut)}.high i{background:var(--hi)}.medium i{background:var(--md)}
-.card p{margin:8px 0}.n{color:var(--mut);font-weight:600}.ex{list-style:none;padding:0;margin:0}.ex li{border-top:1px solid var(--line);padding:7px 0}
-.ex small{display:block;font-size:12px}.tag{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:1px 9px;color:var(--mut);font-weight:500}
-.clean{columns:2;color:var(--mut)}.cta{padding:20px 22px;margin-top:40px}.cta h2{margin:0 0 6px}.fine{font-size:13px;color:var(--mut);margin-top:32px}
-@media (max-width:520px){.clean{columns:1}.grid{grid-template-columns:1fr 1fr}}
-.back{display:none}body:has(#card:target) main{max-width:1232px;padding:16px}body:has(#card:target) main>:not(#card):not(.back){display:none}
-body:has(#card:target) .back{display:inline-block;margin-bottom:10px;font-size:13px}#card:target{max-width:1200px;aspect-ratio:16/9;margin:0;
-padding:44px 52px;display:flex;flex-direction:column}#card:target h2{font-size:34px}#card:target .need{font-size:20px}#card:target .grid{flex:1;
-align-content:center;grid-template-columns:repeat(5,1fr);gap:14px}#card:target .tile{font-size:15px;padding:16px}#card:target .tile b{font-size:40px}
-#card:target small{font-size:16px}@media (max-width:900px){#card:target{aspect-ratio:auto;padding:24px}#card:target .grid{grid-template-columns:1fr 1fr}}"""
+MARK_D = "M76.1 0L110.7 67.2L171 21.7L140 90.7L248 109.5L140 128.3L171 197.3L110.7 151.8L76.1 219L74.1 143.4L0 158.1L57.7 109.5L0 60.9L74.1 75.6ZM110.7 0H196V219H110.7Z"
+WORDS_D = ("M437.5 15.8L438.2 22.9L442.7 63.6L436 64.3C432.5 31.9 427 26.5 410.3 26.5H376.4C369.1 26.5 365.3 30.5 365.3 37"
+           ".6V102.6H394.6C408.6 102.6 412.6 99.1 412.6 74.7H418.1V138.8H412.6C412.6 114.7 408.6 111.2 394.6 111.2H365.3V1"
+           "80.9C365.3 192 367.2 194.4 376.4 194.4H410C427.8 194.4 434.6 187.5 444.1 151.4L450.7 153.3L439.1 198.2L437.2 2"
+           "05.1H313.5V199.4C335.5 199.4 338.6 195.1 338.6 180.7V40.2C338.6 25.8 335.5 21.5 313.5 21.5V15.8H437.5ZM521 138"
+           ".4L543.7 183.3C550.6 197 556.3 199.4 566.2 199.4V205.1H512V199.4C527.2 199.4 525.8 197 518.7 183.3L503.5 153.5"
+           "L489.1 183.1C482.5 196.8 481.1 199.4 496.7 199.4V205.1H454.8V199.4C465.9 199.4 471.6 197 478.5 183.3L498.6 143"
+           ".3L477.5 101.5C470.6 87.7 465 85.4 456 85.4V79.7H508V85.4C493.6 85.4 495.2 87.7 502.3 101.5L516.1 128.4L530 10"
+           "1.5C537.1 87.7 539 85.4 524.1 85.4V79.7H563.1V85.4C553.7 85.4 547.8 87.7 540.7 101.2L521 138.4ZM608.6 208.8C58"
+           "1 208.8 564.9 182.3 564.9 144.5C564.9 105.2 582.2 75.4 612.7 75.4C632.5 75.4 646 88.4 646 106.2C646 116.1 641."
+           "5 122 633.5 122C626.1 122 622.4 117.1 622.4 111.2C622.4 107.1 624 102.4 624 97.4C624 89.4 619.5 85.4 612.4 85."
+           "4C595.4 85.4 588.3 108.8 588.3 135.5C588.3 166.3 597.8 190.9 617.2 190.9C627.8 190.9 639.9 182.8 644.1 153H649"
+           ".8C647.2 192.3 629.9 208.8 608.6 208.8ZM742.1 154.4H747.8C742.8 192.5 726.7 208.8 704.5 208.8C677.8 208.8 661 "
+           "183.5 661 144.5C661 107.1 677.5 75.4 705.7 75.4C733.3 75.4 746.4 101.5 746.4 136H683.9V136.5C683.9 168.6 693.8"
+           " 191.3 713.5 191.3C724.1 191.3 736.4 183.1 742.1 154.4ZM705.7 85.4C691.5 85.4 685.6 102.6 684.1 126.3H723.6C72"
+           "3.6 103.6 719.6 85.4 705.7 85.4ZM796 13.5V180.7C796 195.8 798.2 199.4 812.6 199.4V205.1H756.3V199.4C770.7 199."
+           "4 773.1 195.8 773.1 180.7V44C773.1 28.8 773.1 25.8 758.9 32.9L756.5 27.7L792.5 10.2L796 13.5ZM861.2 13.5V180.7"
+           "C861.2 195.8 863.3 199.4 877.7 199.4V205.1H821.4V199.4C835.9 199.4 838.2 195.8 838.2 180.7V44C838.2 28.8 838.2"
+           " 25.8 824 32.9L821.7 27.7L857.6 10.2L861.2 13.5ZM967.3 154.4H973C968 192.5 951.9 208.8 929.7 208.8C903 208.8 8"
+           "86.2 183.5 886.2 144.5C886.2 107.1 902.7 75.4 930.9 75.4C958.5 75.4 971.5 101.5 971.5 136H909.1V136.5C909.1 16"
+           "8.6 919 191.3 938.7 191.3C949.3 191.3 961.6 183.1 967.3 154.4ZM930.9 85.4C916.7 85.4 910.8 102.6 909.3 126.3H9"
+           "48.8C948.8 103.6 944.8 85.4 930.9 85.4ZM984.1 205.1V199.4C997.8 199.4 1000.2 195.8 1000.2 180.7V107.8C1000.2 9"
+           "2 1000.2 88.7 986 94.6L983.6 89.2L1002.5 81.6L1018.6 75L1023.1 78.5V100.3H1023.8C1034.5 85.6 1045.1 75.4 1061."
+           "2 75.4C1078 75.4 1087.2 87.5 1087.2 109.7V180.7C1087.2 195.8 1089.3 199.4 1102.8 199.4V205.1H1049.8V199.4C1062"
+           ".4 199.4 1064.2 195.8 1064.2 180.7V111.2C1064.2 98.1 1059.3 92 1050.3 92C1040.6 92 1032.1 98.6 1023.1 110.2V18"
+           "0.7C1023.1 195.8 1025 199.4 1037.5 199.4V205.1H984.1ZM1174.5 152.1H1181.1C1181.1 189 1173.8 208.8 1150.6 208.8"
+           "C1132.2 208.8 1122.5 197.7 1122.5 164.6V89.4H1105.9V80.6C1123.2 80.2 1134.1 67.4 1136.4 45.2H1145V79.7H1173.3V"
+           "89.4H1145.4V158.5C1145.4 179.5 1147.6 193.5 1158.7 193.5C1169.3 193.5 1174.5 180.2 1174.5 152.1Z")
+DOWNLOAD = "https://www.excellent.so/download?utm_source=free-scan&utm_medium=report&utm_campaign=launch"
+APP = {  # where a check needs a look: what Excellent for Mac does about it (truth/FEATURE-TRUTH.md; CLAIMS.md rulings D, G, H)
+    "email_out": "With Pro, Excellent for Mac blocks agent commands that send your email to a website, before they run.",
+    "public_submit": "With Pro, Excellent for Mac asks you first, or stops it, when an agent goes to put your email into a web form.",
+    "secrets_in_logs": "Excellent for Mac can take these keys out of your agent logs, and opens each provider's key page so you can replace them.",
+    "secret_files": "With Pro, Excellent for Mac asks you first, or stops it, before an agent reads a .env or key file.",
+    "force_push": "With Pro, Excellent for Mac asks you first, or stops it, before an agent force-pushes main.",
+    "no_verify": "With Pro, Excellent for Mac asks you first, or stops it, before an agent uses --no-verify.",
+    "protected_delete": "With Pro, Excellent for Mac blocks agent commands that delete the folders you marked never-delete.",
+    "written_rules": "With Pro, Excellent for Mac checks each action against the never-delete, never-open and never-run rules you wrote, before it runs.",
+    "broken_hooks": "Excellent for Mac flags these whenever you scan, and repairs hooks that broke because Node moved.",
+}
+LOCKUP = ('<svg class="lockup" viewBox="0 0 1153 219" role="img" aria-label="Excellent"><path fill-rule="evenodd" d="%s"/>'
+          '<path transform="translate(-28.3)" d="%s"/></svg>') % (MARK_D, WORDS_D)
+MARK = '<svg class="mark" viewBox="0 0 248 219" aria-hidden="true"><path fill-rule="evenodd" d="%s"/></svg>' % MARK_D
+ARROW = '<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9.5M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>'
+LIGHT = ("--paper:#fff;--paper2:#f1f4f6;--card:#fff;--ink:#0f1419;--ink2:#27313b;--quiet:#56616c;--faint:#7d8893;--rule:#d8dfe5;"
+         "--fill:#f1f4f6;--fill2:#e2e8ed;--accent:#1d6b74;--ok:#2e8c8c;--hi:#c42a18;--hi-bg:#ce2e1c14;--edge:#0e0e0e17;"
+         "--shadow:0 1px 2px #171b1f0f,0 12px 32px -12px #171b1f2e")
+CSS = """:root{color-scheme:light dark;""" + LIGHT + """;
+--field:radial-gradient(90% 120% at 0% 0%,#9fc3c88c,#0000 55%),radial-gradient(80% 100% at 100% 100%,#5f8a91b3,#0000 65%),linear-gradient(150deg,#3b5b66,#24363f 55%,#1e2a33);
+--serif:"PP Editorial New",Fraunces,ui-serif,Baskerville,"Iowan Old Style",Georgia,serif;--sans:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Monaco,monospace}
+@media screen and (prefers-color-scheme:dark){:root{--paper:#12181d;--paper2:#161d23;--card:#1a2229;--ink:#f2f6f8;--ink2:#d2dae0;--quiet:#97a4af;
+--faint:#6f7b86;--rule:#2b3640;--fill:#222c34;--fill2:#2b3640;--accent:#6cc3c3;--ok:#5bb5b2;--hi:#ff8c7a;--hi-bg:#ff8c7a1a;--edge:#ffffff14;
+--shadow:0 1px 2px #0000004d,0 16px 40px -16px #0009;
+--field:radial-gradient(90% 120% at 0% 0%,#7fa9ae4d,#0000 55%),radial-gradient(80% 100% at 100% 100%,#3b5b66b3,#0000 65%),linear-gradient(150deg,#2f4a52,#1c2a33 55%,#161f27)}}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+h1,h2,h3,p,ul,dl,dd{margin:0}ul{padding:0;list-style:none}svg{display:block;fill:currentColor}
+a{color:inherit;text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:4px}a:hover{text-decoration-color:currentColor}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+code{font:12.5px/1.55 var(--mono);color:var(--ink2);word-break:break-all}
+.wrap{max-width:944px;margin:0 auto;padding:0 clamp(16px,5vw - 8px,40px)}
+.top{border-bottom:1px dashed var(--rule)}.top .wrap,footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px 24px;flex-wrap:wrap}
+.top .wrap{min-height:64px}.lockup{flex:none;height:20px;width:auto;aspect-ratio:1153/219}.nw{white-space:nowrap}
+.label{font:500 11px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--quiet)}
+.hero{padding:clamp(40px,7vw,80px) 0 clamp(28px,4vw,40px)}
+h1{font:400 clamp(38px,6vw,60px)/1.06 var(--serif);letter-spacing:-.02em;text-wrap:balance}
+.lede{margin-top:18px;max-width:38em;font-size:17px;line-height:1.6;color:var(--quiet);text-wrap:pretty}
+.score{border-radius:12px;padding:clamp(10px,2.6vw,28px);background:var(--field);box-shadow:inset 0 0 0 1px #ffffff1a,0 24px 60px -36px #171b1f8c}
+.score-in{display:flex;flex-direction:column;gap:20px;padding:clamp(20px,3.6vw,36px);border-radius:8px;background:var(--card);box-shadow:var(--shadow)}
+.score .lockup{align-self:flex-start;height:18px}.score h2{font:400 clamp(24px,3.4vw,34px)/1.16 var(--serif);letter-spacing:-.015em;text-wrap:balance}.sub{display:block;color:var(--faint)}.sep{display:none}
+.need{margin-top:-4px;font-size:15px;color:var(--quiet)}.need b{color:var(--ink);font-weight:600}
+.need i{display:inline-block;width:8px;height:8px;margin-right:10px;border-radius:50%;background:var(--hi);vertical-align:1px}.need.ok i{background:var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.tile{padding:14px 14px 16px;border-radius:6px;background:var(--fill);font-size:13px;line-height:1.35;color:var(--quiet)}
+.tile b{display:block;margin-bottom:10px;font:400 36px/1 var(--serif);letter-spacing:-.02em;color:var(--ink);font-variant-numeric:lining-nums tabular-nums}
+.tile.ok b{color:var(--ok)}
+.foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 24px;padding-top:18px;border-top:1px solid var(--fill2);font-size:13px;color:var(--quiet)}
+.foot small{font-size:inherit}.foot a,.btn,.btn2{display:inline-flex;align-items:center;gap:8px;text-decoration:none;white-space:nowrap}.foot a{font-weight:500;color:var(--ink)}.arrow{width:15px;height:15px}
+.share{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-top:18px;font-size:13px;line-height:1.5;color:var(--quiet)}.share span{flex:1;min-width:18em}
+.btn2{height:38px;padding:0 16px;border:1px solid var(--rule);border-radius:99px;font:500 13px/1 var(--sans);color:var(--ink)}.btn2:hover{border-color:var(--ink2)}
+.sec{padding-top:clamp(56px,8vw,88px)}.head{margin-bottom:28px}
+.sec h2,.cta h2{margin-top:12px;font:400 clamp(30px,4vw,42px)/1.12 var(--serif);letter-spacing:-.02em;text-wrap:balance}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;box-shadow:inset 0 0 0 1px currentColor;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.label .pill{margin-left:8px;vertical-align:1px}
+.find{margin:12px 0;border:1px solid var(--edge);border-radius:8px;background:var(--card);box-shadow:var(--shadow)}
+.find summary{display:grid;grid-template-columns:1fr auto;grid-template-areas:"s n" "t n";gap:10px 20px;align-items:center;padding:22px 26px;cursor:pointer;list-style:none}
+.find summary::-webkit-details-marker{display:none}.find h3{grid-area:t;font:500 19px/1.35 var(--sans);letter-spacing:-.01em}
+.n{grid-area:n;font:400 40px/1 var(--serif);letter-spacing:-.02em;font-variant-numeric:lining-nums tabular-nums}
+.sev{grid-area:s;justify-self:start;display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px;border-radius:4px;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.sev i{width:6px;height:6px;border-radius:50%;background:currentColor}.high .sev{color:var(--hi);background:var(--hi-bg)}
+.medium .sev{color:var(--ink2);box-shadow:inset 0 0 0 1px var(--rule)}.low .sev{color:var(--quiet);background:var(--fill)}.low .sev i{background:none;box-shadow:inset 0 0 0 1px currentColor}
+.fb{display:grid;gap:20px;padding:0 26px 26px}.what{padding-top:20px;border-top:1px solid var(--fill2);color:var(--ink2)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px 36px}.pair dt{margin-bottom:6px}.pair dd{font-size:15px;line-height:1.6;color:var(--quiet)}
+.app{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-radius:6px;background:var(--fill);font-size:14px;line-height:1.5;color:var(--ink2)}
+.mark{flex:none;width:17px;height:15px;margin-top:2px}.exs .label{margin-bottom:8px}
+.ex{display:grid;gap:6px}.ex li{padding:10px 12px;border:1px solid var(--fill2);border-radius:6px}.ex small{display:block;margin-top:4px;font-size:12px;color:var(--quiet)}
+.cleanbox{margin-top:36px}.cleanbox .label{margin-bottom:10px}.clean{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:0 36px}
+.clean li{display:flex;align-items:center;gap:14px;padding:13px 0;border-top:1px solid var(--rule);font-size:15px;color:var(--ink2)}
+.clean li:before{content:"";flex:none;width:10px;height:5px;margin:-4px 2px 0;border:solid var(--ok);border-width:0 0 2px 2px;transform:rotate(-45deg)}
+.cta{margin-top:clamp(64px,9vw,104px);padding:clamp(28px,5.4vw,56px);
+border-radius:12px;background:var(--field);color:#f2f6f8;box-shadow:inset 0 0 0 1px #ffffff1a}
+.cta .lede{max-width:34em}.go{display:flex;flex-wrap:wrap;align-items:center;gap:14px 24px;margin-top:30px}.go .fine{margin:0;max-width:24em}.cta .label{display:flex;align-items:center;gap:10px;color:#c7d3dc}.cta .mark{margin:0}.cta .lede{color:#c3ced6}
+.btn{min-height:48px;padding:0 24px;border-radius:99px;background:#f2f6f8;color:#12181d;font:500 15px/1 var(--sans)}.btn:hover{background:#fff}
+.fine{margin-top:14px;font-size:13px;line-height:1.5;color:#aebbc5}.tiers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:clamp(32px,4vw,44px)}
+.tiers li{padding:20px 22px;border:1px solid #ffffff21;border-radius:8px;background:#0f191f59}
+.tiers b{display:block;margin:12px 0 6px;font:400 23px/1.2 var(--serif);color:#fff}.tiers p{font-size:14px;line-height:1.55;color:#c3ced6}.tiers p+p{margin-top:8px;color:#aebbc5}.tiers .req{grid-column:1/-1;padding:4px 2px 0;border:0;background:none}.tiers .req p{font-size:13px;color:#aebbc5}
+.pill.solid{background:#f2f6f8;color:#12181d;box-shadow:none}
+.method{display:grid;grid-template-columns:1fr 1fr;gap:28px 44px}.method h3{margin-bottom:6px;font:500 15px/1.4 var(--sans)}.method p{font-size:14px;line-height:1.65;color:var(--quiet)}
+footer{margin-top:clamp(64px,9vw,104px);border-top:1px dashed var(--rule)}footer .wrap{padding-top:24px;padding-bottom:44px;font-size:13px;color:var(--quiet)}footer .lockup{height:16px}
+.back{display:none}body:has(#card:target) :is(.top,footer),body:has(#card:target) main>:not(#card):not(.back){display:none}
+body:has(#card:target) main{max-width:1264px;padding:24px 32px}body:has(#card:target) .back{display:inline-block;margin-bottom:12px;font-size:13px;color:var(--quiet)}
+#card:target{display:flex;width:1200px;max-width:100%;aspect-ratio:16/9;padding:32px}#card:target .score-in{flex:1;justify-content:space-between;gap:0;padding:36px 44px 30px}
+#card:target .lockup{height:22px}#card:target h2{font-size:38px;line-height:1.14}#card:target .need{margin:0;font-size:18px}#card:target .grid{gap:10px}
+#card:target .tile{padding:16px 18px 18px;font-size:14.5px}#card:target .tile b{font-size:46px;margin-bottom:10px}#card:target .foot{padding-top:16px;font-size:15px}
+@media (max-width:900px){#card:target{aspect-ratio:auto;padding:12px}#card:target .score-in{padding:24px}#card:target h2{font-size:28px}
+#card:target .grid{grid-template-columns:1fr 1fr}#card:target .tile b{font-size:36px}}
+@media (max-width:860px){.grid{grid-template-columns:1fr 1fr}}
+@media (max-width:700px){.pair,.method,.tiers{grid-template-columns:1fr}.tile b{font-size:32px}
+.find summary{padding:18px 18px}.fb{padding:0 18px 18px}.n{font-size:32px}.top .label{display:none}}
+@media print{:root{""" + LIGHT + """}body{font-size:13px}.share,.back{display:none}.score,.cta{padding:0;background:none;box-shadow:none}
+.score-in,.tile,.find,.tiers li{border:1px solid var(--rule);box-shadow:none}.grid{grid-template-columns:repeat(5,minmax(0,1fr))}.score,.cta,.method>div,.ex li,.find summary,.pair,.app{break-inside:avoid}.find summary,.head{break-after:avoid}.need i,.sev,.sev i,.tile.ok b{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cta{color:var(--ink);gap:24px}.cta :is(.label,.lede,.fine,.tiers p){color:var(--quiet)}.tiers b{color:var(--ink)}.tiers li{background:none}
+.btn{margin-top:20px;border:1px solid var(--ink);background:none;color:var(--ink)}.btn:after{content:": excellent.so/download"}.pill.solid{border:1px solid var(--ink)}}"""
 
 
 def fmt(n):
@@ -891,33 +993,42 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
             if txt:
                 ex += "<li><code>%s</code><small>%s</small></li>" % (e(txt), e(" · ".join(filter(None, [
                     AGENT_NAMES[s["agent"]], day(s["ts"]), proj, "" if s["outcome"] == "ran" else s["outcome"]]))))
-        cards += ('<details class="card %s" open><summary><i></i><h3>%s</h3><span class="n">%s</span></summary><p><b>%s</b></p><p>%s</p>'
-                  '<p><b>What you can do now:</b> %s</p>%s</details>') % (x["severity"], e(c[2]), fmt(x["count"]),
-                  e(anon.detail(x["detail"]) if anon else x["detail"]), e(c[4]), e(c[5]), '<ul class="ex">%s</ul>' % ex if ex else "")
-    clean = "".join("<li>%s</li>" % e(c[2]) for c in CHECKS if c[0] not in f) or "<li>None</li>"
+        cards += ('<details class="find %s" open><summary><span class="sev"><i></i>%s</span><h3>%s</h3><span class="n">%s</span></summary>'
+                  '<div class="fb"><p class="what">%s</p><dl class="pair"><div><dt class="label">What this means</dt><dd>%s</dd></div>'
+                  '<div><dt class="label">What to do</dt><dd>%s</dd></div></dl>%s%s</div></details>\n') % (
+                  x["severity"], x["severity"], e(c[2]), fmt(x["count"]), e(anon.detail(x["detail"]) if anon else x["detail"]), e(c[4]), e(c[5]),
+                  '<p class="app">%s<span>%s</span></p>' % (MARK, e(APP[c[0]])) if c[0] in APP else "",
+                  '<div class="exs"><p class="label">Recent examples</p><ul class="ex">%s</ul></div>' % ex if ex else "")
+    clean = "".join("<li>%s</li>" % e(c[2]) for c in CHECKS if c[0] not in f)
     who = "you@example.com" if anon else ", ".join(re.sub(r"^(.).*@(.).*?(\.\w+)$", r"\1•••@\2•••\3", x) for x in EMAILS) or "no email found"
     m = {k: e(fmt(v) if isinstance(v, int) else v) for k, v in meta.items()}
-    lead = e("My %s check-up · %s%s" % (meta["agents"] if meta["sessions"] else "AI agent", plural(meta["calls"], "agent action"),
-                                                       ", " + meta["span"] if meta["span"] else ""))
+    title = e("My %s" % (meta["agents"] if meta["sessions"] else "AI agent"))
+    sub = e("%s%s" % (plural(meta["calls"], "agent action"), ", " + meta["span"] if meta["span"] else ""))
     need = "<b>%d of %d</b> checks %s a look" % (len(f), len(CHECKS), "needs" if len(f) == 1 else "need") if f else "<b>All %d checks clean</b>" % len(CHECKS)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="referrer" content="no-referrer">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Agent check-up</title><style>{CSS}</style></head><body><main>
-<h1>Your agent check-up</h1><p class="mut">What your AI coding agents did on this Mac, read from their own logs on {m['date']}. This script showed your agent only a short summary: counts, agent names, dates and where this page is. Nothing else it read left this Mac.</p>
-<a class="back" href="#">← Back to the full report</a>
-<section class="score" id="card"><h2>{lead}</h2><p class="need">{need}</p><div class="grid">{tiles}</div>
-<small>{e(plural(meta['sessions'], 'session'))} · Free check by Excellent<br><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan</a></small></section>
-<p class="mut" style="font-size:13px"><a href="#card"><b>Show only the card</b></a>, sized for a screenshot. Safe to share: the card holds counts, agent names and dates only: no emails, sites, folders, commands or keys. Everything below is just for you.</p>
-<h2>What we found <span class="tag">Private</span></h2><p class="mut">What happened, why it matters, and what you can do yourself. Examples are masked: your email shows as ‹your email›.</p>
-{cards or '<p>Nothing to flag. Your agents passed every check.</p>'}<h2>Checks that came back clean</h2><ul class="clean">{clean}</ul>
-<section class="cta"><h2>Want this check running all the time?</h2><p>This page is a one-time look back. Excellent for Mac shows the same findings whenever you scan, for free. The free scan shows the leak; Pro stops it. With Pro, the check runs in the background and tells you when an agent sends your email to a website, deletes a never-delete folder, force-pushes main or leaves a key in a log, and each time it blocks or asks. The app also fixes some in a click (keys in logs, broken Node hooks):</p>
-<ul><li>with Pro, blocks agent commands that send your email to websites, and asks you before force pushes to main and --no-verify (Codex, Cursor, Gemini CLI and Devin refuse instead of asking)</li><li>takes keys out of your agent logs and shows you where to replace them</li>
-<li>with Pro, checks each agent action from outside the agent against the never-delete, never-open and never-run rules you already wrote in CLAUDE.md and AGENTS.md</li></ul><p class="mut">Excellent for Mac runs on Apple silicon Macs with macOS 14 or later, with no account needed, for Claude Code, Codex and other agents. Pro is $6 a month or $60 a year. Pro is sold in the US for now.</p>
-<a href="https://excellent.so"><b>See how it works at excellent.so →</b></a></section>
-<section class="fine"><p><b>How this check worked.</b> Your agent saved a Python script where you could read it (~/excellent-free-scan/scan.py), checked it, and ran it. It read {e(plural(meta['sessions'], 'session'))} ({m['gb']} of logs) in {m['secs']}, {e(plural(meta['rulefiles'], 'instruction file'))} with {e(plural(meta['rules'], 'rule'))} it can check (never delete, never open, never run), and your hook settings. It looked for {e(who)} as your email.</p>
-<p><b>What it never did.</b> It used no network and changed no file except this page. It kept no key or email, and never opened Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos data or app containers in Library, other drives, or a folder your rules name as never to open or read, once it had read that rule. This page loads nothing.</p>
-<p><b>Limits.</b> Logs go back only as far as your agents keep them (Claude Code: 30 days unless you change it). Keys count only when they have a known shape; test and example keys are left out. The rules are the Excellent app's, simplified, so counts can differ a little.</p>
-<p>To delete this page: <code>rm -r ~/excellent-free-scan</code></p></section></main></body></html>"""
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Your agents' check-up · Excellent</title>
+<style>{CSS}</style></head><body>
+<header class="top"><div class="wrap">{LOCKUP}<span class="label">Free check-up · {m['date']}</span></div></header>
+<main class="wrap"><a class="back" href="#">← Back to the full report</a>
+<section class="hero"><h1>Your agents' check-up</h1><p class="lede">What your AI coding agents did on this Mac, read from their own logs on {m['date']}. This script showed your agent only a short summary: counts, agent names, dates and where this page is. Nothing else it read left this Mac.</p></section>
+<section class="score" id="card"><div class="score-in">{LOCKUP}<h2>{title} <span class="nw">check-up</span><span class="sub"><span class="sep"> · </span>{sub}</span></h2><p class="need{'' if f else ' ok'}"><i></i>{need}</p>
+<div class="grid">{tiles}</div><div class="foot"><small>{e(plural(meta['sessions'], 'session'))} · Free check by Excellent</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
+<p class="share"><a class="btn2" href="#card">Show only the card{ARROW}</a><span>Sized for a screenshot, and safe to share: the card holds counts, agent names and dates only, with no emails, sites, folders, commands or keys. Everything below is just for you.</span></p>
+<section class="sec" id="found"><div class="head"><p class="label">Just for you <span class="pill">Private</span></p><h2>What we found</h2><p class="lede">What happened, why it matters, and what you can do yourself. Examples are masked: your email shows as ‹your email›.</p></div>
+{cards or '<p class="lede">Nothing to flag. Your agents passed every check.</p>'}
+{'<div class="cleanbox"><p class="label">Came back clean</p><ul class="clean">%s</ul></div>' % clean if clean else ''}</section>
+<section class="cta" id="mac"><div><p class="label">{MARK}Excellent for Mac</p><h2>Manage at agent speed</h2><p class="lede">Your agents run hundreds of steps you never see. Excellent holds every one to your rules, and stops the risky ones or asks you first.</p>
+<div class="go"><a class="btn" href="{html.escape(DOWNLOAD)}">Get Excellent for Mac{ARROW}</a><p class="fine">Scanning is free. With Pro, it blocks or asks before the risky actions it checks for.</p></div></div>
+<ul class="tiers"><li><span class="pill solid">Free</span><b>See what your agents did</b><p>This page is a one-time look back. Excellent for Mac shows the same findings whenever you scan, with no account needed.</p></li>
+<li><span class="pill">Pro</span><b>Stop it as it happens</b><p>It blocks or asks before risky actions, turns your rules into the Mac's own sandbox, scans in the background and alerts you.</p><p>Pro is $6 a month or $60 a year. Pro is sold in the US for now.</p></li>
+<li class="req"><p>For Macs with Apple silicon and macOS 14 or later. Excellent for Mac today; a version for Linux servers comes next, then Windows.</p></li></ul></section>
+<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page loads nothing and sends nothing. Your agent saw only the short summary the script printed.</p></div><div class="method">
+<div><h3>How this check worked</h3><p>Your agent saved a Python script where you could read it (~/excellent-free-scan/scan.py), checked it, and ran it. It read {e(plural(meta['sessions'], 'session'))} ({m['gb']} of logs) in {m['secs']}, {e(plural(meta['rulefiles'], 'instruction file'))} with {e(plural(meta['rules'], 'rule'))} it can check (never delete, never open, never run), and your hook settings. It looked for {e(who)} as your email.</p></div>
+<div><h3>What it never did</h3><p>It used no network and changed no file except this page. It kept no key or email, and never opened Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos data or app containers in Library, other drives, or a folder your rules name as never to open or read, once it had read that rule. This page loads nothing.</p></div>
+<div><h3>Limits</h3><p>Logs go back only as far as your agents keep them (Claude Code: 30 days unless you change it). Keys count only when they have a known shape; test and example keys are left out. The rules are the Excellent app's, simplified, so counts can differ a little.</p></div>
+<div><h3>To delete this page</h3><p><code>rm -r ~/excellent-free-scan</code></p></div></div></section></main>
+<footer><div class="wrap">{LOCKUP}<span>A free check by Excellent · {m['date']}</span></div></footer></body></html>"""
 
 
 def run(args):

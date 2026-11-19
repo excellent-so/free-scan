@@ -59,8 +59,9 @@ user's own agent logs and opens a local report (`~/excellent-free-scan/report.ht
 - Script: `scan.py` in this folder, {len(script.encode()):,} bytes, Python 3.9+ standard library only.
 - SHA-256 of the script: `{digest}`. The same hash is listed at excellent.so/scan and in the excellent-so/free-scan
   repo, so you can check your copy.
-- The extractor copies the script out of the conversation's own log, so the agent doesn't have to retype 60 KB
-  (about 17,000 output tokens and three to five minutes). If it can't, the agent writes the file itself.
+- The extractor copies the script out of the conversation's own log, so the agent doesn't have to retype
+  {len(script.encode()) // 1000} KB (about {round(len(script.encode()) / 3.4, -3):,.0f} output tokens and three to six minutes). If it can't, the agent
+  writes the file itself.
 - Rebuild this file after any change to `scan.py`: `python3 build_prompt.py`.
 
 Copy from the line after the opening fence to the line before the closing fence.
