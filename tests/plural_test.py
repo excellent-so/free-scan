@@ -5,7 +5,7 @@ import html, os, re, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import scan
 meta = {"date": "November 18, 2026", "sessions": 1, "calls": 1, "agents": "Claude Code", "span": "Nov 18 – Nov 18",
-        "secs": scan.plural(1, "second"), "gb": "0.0 GB", "rules": 1, "rulefiles": 1}
+        "secs": scan.plural(1, "second"), "gb": "0.0 GB", "rules": 1, "rulefiles": 1, "split": [1]}
 one = {"email_out": {"count": 1, "detail": "", "examples": [], "severity": "high"}}
 every = {c[0]: {"count": 1, "detail": "", "examples": [], "severity": c[1]} for c in scan.CHECKS}
 fails = []

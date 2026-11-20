@@ -10,9 +10,9 @@
 # Never opens Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos
 # data or app containers in Library, other drives, or a folder your rules name (in backticks) as never to open or
 # read, once it has read that rule. Same rules as the Excellent app, simplified. Python 3.9+, standard library.
-import hashlib, html, json, os, posixpath as pp, re, subprocess, sys, time
+import base64, hashlib, html, json, os, posixpath as pp, re, subprocess, sys, time, zlib
 from datetime import datetime
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 HOME = os.path.expanduser("~").rstrip("/")
 USER = pp.basename(HOME)  # your account name: never printed or shown
@@ -904,6 +904,10 @@ h1{font:400 clamp(38px,6vw,60px)/1.06 var(--serif);letter-spacing:-.02em;text-wr
 .foot small{font-size:inherit}.foot a,.btn,.btn2{display:inline-flex;align-items:center;gap:8px;text-decoration:none;white-space:nowrap}.foot a{font-weight:500;color:var(--ink)}.arrow{width:15px;height:15px}
 .share{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-top:18px;font-size:13px;line-height:1.5;color:var(--quiet)}.share span{flex:1;min-width:18em}
 .btn2{height:38px;padding:0 16px;border:1px solid var(--rule);border-radius:99px;font:500 13px/1 var(--sans);color:var(--ink)}.btn2:hover{border-color:var(--ink2)}
+[hidden]{display:none!important}
+.tools{margin-top:14px;padding:18px 20px;border:1px solid var(--rule);border-radius:10px}.tools .row{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+button.btn2{background:none;cursor:pointer}button.btn2:disabled{opacity:.6;cursor:progress}.hint{margin-top:8px;font-size:13px;line-height:1.5;color:var(--quiet)}
+#lnk{display:block;margin-top:10px;font-size:11.5px;color:var(--quiet)}#vid{display:block;width:100%;max-width:640px;margin-top:14px;border-radius:6px}
 .sec{padding-top:clamp(56px,8vw,88px)}.head{margin-bottom:28px}
 .sec h2,.cta h2{margin-top:12px;font:400 clamp(30px,4vw,42px)/1.12 var(--serif);letter-spacing:-.02em;text-wrap:balance}
 .pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;box-shadow:inset 0 0 0 1px currentColor;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
@@ -943,7 +947,7 @@ body:has(#card:target) main{max-width:1264px;padding:24px 32px}body:has(#card:ta
 @media (max-width:860px){.grid{grid-template-columns:1fr 1fr}}
 @media (max-width:700px){.pair,.method,.tiers{grid-template-columns:1fr}.tile b{font-size:32px}
 .find summary{padding:18px 18px}.fb{padding:0 18px 18px}.n{font-size:32px}.top .label{display:none}}
-@media print{:root{""" + LIGHT + """}body{font-size:13px}.share,.back{display:none}.score,.cta{padding:0;background:none;box-shadow:none}
+@media print{:root{""" + LIGHT + """}body{font-size:13px}.share,.back,.tools{display:none}.score,.cta{padding:0;background:none;box-shadow:none}
 .score-in,.tile,.find,.tiers li{border:1px solid var(--rule);box-shadow:none}.grid{grid-template-columns:repeat(5,minmax(0,1fr))}.score,.cta,.method>div,.ex li,.find summary,.pair,.app{break-inside:avoid}.find summary,.head{break-after:avoid}.need i,.sev,.sev i,.tile.ok b{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .cta{color:var(--ink);gap:24px}.cta :is(.label,.lede,.fine,.tiers p){color:var(--quiet)}.tiers b{color:var(--ink)}.tiers li{background:none}
 .btn{margin-top:20px;border:1px solid var(--ink);background:none;color:var(--ink)}.btn:after{content:": excellent.so/download"}.pill.solid{border:1px solid var(--ink)}}"""
@@ -971,6 +975,174 @@ def project_of(cwd):  # a label for the report: your account name shows as ‹yo
 
 
 SHARE = "https://excellent.so/scan?utm_source=free-scan&utm_medium=share&utm_campaign=launch"
+SHARE_R = "https://excellent.so/r"  # share link v1: share-format.json and NOTES.md say what each field means
+UTM = "&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content="
+ROUTES = ("x", "linkedin", "copy", "video", "image")  # utm_content: which share button the link came from
+LETTERS = {"claude": "c", "codex": "x", "grok": "g"}  # a= in card order (AGENT_NAMES order)
+X_POST = "https://x.com/intent/post?text="
+X_TEXTS = {  # the prefilled X posts, first person, in the card's own labels. {top} is the top two non-zero checks. The link is IN the post (Matt, Nov 19)
+    "some": "My AI coding agents' check-up: {top}. A free check counted it from my own Mac's logs. Run yours: {link}",
+    "zero": "I ran a free check on my AI coding agents' logs: all {checks} checks came back clean across {actions}. Run yours: {link}"}
+# No network of any kind (no connect-src), one inline script allowed by its hash, files made on this Mac (blob:) only
+CSP_FMT = "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-%s'; img-src blob:; media-src blob:"
+SCRIPT_JS = r'''(function () {
+"use strict";
+var D = JSON.parse(document.getElementById("card-data").textContent);
+var $ = function (i) { return document.getElementById(i); };
+var dark = matchMedia("(prefers-color-scheme: dark)").matches;
+var P = dark ? {card: "#1a2229", ink: "#f2f6f8", ink2: "#d2dae0", quiet: "#97a4af", faint: "#6f7b86", rule: "#2b3640", fill: "#222c34", ok: "#5bb5b2", hi: "#ff8c7a"}
+  : {card: "#ffffff", ink: "#0f1419", ink2: "#27313b", quiet: "#56616c", faint: "#7d8893", rule: "#d8dfe5", fill: "#f1f4f6", ok: "#2e8c8c", hi: "#c42a18"};
+var SEV = {high: P.hi, medium: P.ink2, low: P.faint, ok: P.ok};
+var SERIF = 'ui-serif, Baskerville, "Iowan Old Style", Georgia, serif';
+var SANS = 'Inter, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+var lk = document.querySelectorAll(".score .lockup path");
+var MARK = new Path2D(lk[0].getAttribute("d")), WORDS = new Path2D(lk[1].getAttribute("d"));
+var SPLIT = 6, TOTAL = 7.5, T0 = 1.2, STEP = 0.4, DUR = 1;  // seconds: tiles start at T0 + i*STEP; the last 1.5 s hold
+var clamp = function (x) { return Math.max(0, Math.min(1, x)); };
+var ease = function (x) { return 1 - Math.pow(1 - x, 3); };
+var num = function (n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
+var tick = function (s, n) { return s.replace(/^[\d,]+/, num(n)); };
+
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function wrap(c, text, w) {
+  var words = text.split(" "), lines = [], l = "";
+  words.forEach(function (x) { var n = l ? l + " " + x : x; if (l && c.measureText(n).width > w) { lines.push(l); l = x; } else l = n; });
+  if (l) lines.push(l);
+  return lines;
+}
+
+// One drawing for the image and the video. t is seconds into the clip; any t at or past TOTAL is the finished card.
+function draw(c, W, t) {
+  var s = W / 1200, i, a = function (t0, d) { return clamp((t - t0) / d); };
+  c.setTransform(s, 0, 0, s, 0, 0); c.globalAlpha = 1; c.textBaseline = "alphabetic";
+  var g = c.createLinearGradient(0, 0, 1200, 675); g.addColorStop(0, dark ? "#2f4a52" : "#3b5b66"); g.addColorStop(0.55, dark ? "#1c2a33" : "#24363f"); g.addColorStop(1, dark ? "#161f27" : "#1e2a33");
+  c.fillStyle = g; c.fillRect(0, 0, 1200, 675);
+  var r1 = c.createRadialGradient(0, 0, 0, 0, 0, 1000); r1.addColorStop(0, "rgba(159,195,200,.5)"); r1.addColorStop(0.55, "rgba(159,195,200,0)");
+  c.fillStyle = r1; c.fillRect(0, 0, 1200, 675);
+  var r2 = c.createRadialGradient(1200, 675, 0, 1200, 675, 800); r2.addColorStop(0, "rgba(95,138,145,.7)"); r2.addColorStop(0.65, "rgba(95,138,145,0)");
+  c.fillStyle = r2; c.fillRect(0, 0, 1200, 675);
+  rr(c, 32, 32, 1136, 611, 10); c.fillStyle = P.card; c.fill();
+  c.save(); c.translate(76, 68); c.scale(22 / 219, 22 / 219); c.fillStyle = P.ink; c.fill(MARK, "evenodd"); c.translate(-28.3, 0); c.fill(WORDS); c.restore();
+  c.globalAlpha = a(0.1, 0.5); c.fillStyle = P.ink; c.font = "400 38px " + SERIF; c.fillText(D.title + " check-up", 76, 150);
+  c.globalAlpha = a(0.5, 0.5); c.fillStyle = P.faint; c.font = "400 20px " + SANS;
+  c.fillText(tick(D.sub, Math.round(D.actions * ease(a(0.6, 1.8)))), 76, 184);
+  var shown = 0, firing = 0;
+  D.tiles.forEach(function (x, k) { if (x.sev !== "ok") { firing++; if (t >= T0 + k * STEP) shown++; } });
+  c.globalAlpha = a(1, 0.4); c.beginPath(); c.arc(80, 227, 4, 0, 7); c.fillStyle = D.ok ? P.ok : P.hi; c.fill();
+  c.font = "600 20px " + SANS; c.fillStyle = P.ink; var b = D.need_b.charAt(0) >= "0" && D.need_b.charAt(0) <= "9" ? tick(D.need_b, shown) : D.need_b;
+  c.fillText(b, 96, 233); c.font = "400 20px " + SANS; c.fillStyle = P.quiet; c.fillText(" " + D.need_r, 96 + c.measureText(b).width + 6, 233);
+  var tw = (1048 - 40) / 5;
+  D.tiles.forEach(function (x, k) {
+    var gx = 76 + (k % 5) * (tw + 10), gy = 256 + Math.floor(k / 5) * 160, st = T0 + k * STEP, f = a(st, 0.3);
+    c.globalAlpha = a(0.9, 0.5) * (1 - f); rr(c, gx + 0.5, gy + 0.5, tw - 1, 149, 6); c.strokeStyle = P.rule; c.lineWidth = 1; c.stroke();
+    c.globalAlpha = f; rr(c, gx, gy, tw, 150, 6); c.fillStyle = P.fill; c.fill();
+    if (x.sev !== "ok") { c.save(); rr(c, gx, gy, tw, 150, 6); c.clip(); c.fillStyle = SEV[x.sev]; c.fillRect(gx, gy, tw, 3); c.restore(); }
+    c.fillStyle = x.sev === "ok" ? P.ok : P.ink; c.font = "400 46px " + SERIF;
+    c.fillText(num(Math.round(x.n * ease(a(st, DUR)))), gx + 18, gy + 62);
+    c.fillStyle = P.quiet; c.font = "400 14.5px " + SANS;
+    wrap(c, x.label, tw - 36).forEach(function (l, j) { c.fillText(l, gx + 18, gy + 92 + j * 20); });
+  });
+  c.globalAlpha = 1; c.fillStyle = P.rule; c.fillRect(76, 592, 1048, 1);
+  c.fillStyle = P.quiet; c.font = "400 15px " + SANS; c.fillText(D.foot, 76, 620);
+  c.globalAlpha = a(SPLIT - 0.1, 0.4); c.fillStyle = P.ink; c.font = "600 20px " + SANS; c.textAlign = "right";
+  c.fillText("Run yours free: excellent.so/scan", 1124, 622); c.textAlign = "left"; c.globalAlpha = 1;
+}
+
+function say(m) { $("sstat").textContent = m; }
+function save(blob, name) {
+  var u = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+}
+var MIME = "";
+if (window.MediaRecorder && HTMLCanvasElement.prototype.captureStream) {
+  ["video/mp4;codecs=avc1.640028", "video/mp4;codecs=avc1.42E01E", "video/mp4;codecs=avc1", "video/mp4"].some(function (m) { return MediaRecorder.isTypeSupported(m) && (MIME = m); });
+}
+var vb = $("bvid"), busy = false;
+if (!MIME) { vb.hidden = true; say("This browser can't make an MP4, which is what X accepts, so Save video is off. Try Safari or Chrome. Save image still works."); }
+
+vb.addEventListener("click", function () {
+  if (busy) return; busy = true; vb.disabled = true;
+  var cv = $("vid"), c = cv.getContext("2d"), chunks = [], rec;
+  cv.width = 1280; cv.height = 720; cv.hidden = false; draw(c, 1280, 0);
+  try { rec = new MediaRecorder(cv.captureStream(30), {mimeType: MIME, videoBitsPerSecond: 5000000}); } catch (x) { say("Could not start recording."); busy = false; vb.disabled = false; return; }
+  rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = function () {
+    var blob = new Blob(chunks, {type: "video/mp4"});
+    save(blob, "excellent-check-up.mp4"); say("Saved excellent-check-up.mp4 (" + (blob.size / 1048576).toFixed(1) + " MB, " + TOTAL + " seconds). Check your Downloads.");
+    cv.hidden = true; vb.disabled = false; busy = false; vb.textContent = "Save video";
+  };
+  rec.start(); var t0 = performance.now();
+  (function frame() {
+    var t = (performance.now() - t0) / 1000;
+    draw(c, 1280, Math.min(t, TOTAL));
+    vb.textContent = "Recording " + Math.min(100, Math.round(t / TOTAL * 100)) + "%";
+    say("Recording the clip takes " + TOTAL + " seconds. Keep this tab in front.");
+    if (t < TOTAL + 0.2) setTimeout(frame, 1000 / 30); else rec.stop();
+  })();
+});
+$("bimg").addEventListener("click", function () {
+  var cv = document.createElement("canvas"); cv.width = 1200; cv.height = 675; draw(cv.getContext("2d"), 1200, 99);
+  cv.toBlob(function (b) { if (b) { save(b, "excellent-check-up.png"); say("Saved excellent-check-up.png (1200 x 675)."); } else say("Could not make the image."); }, "image/png");
+});
+$("bcopy").addEventListener("click", function () {
+  var u = D.links.copy, done = function () { say("Copied the share link."); };
+  var old = function () { var t = document.createElement("textarea"); t.value = u; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); done(); } catch (x) { say("Could not copy. Select the link and copy it."); } t.remove(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(done, old); else old();
+});
+})();'''
+
+
+def tile_rows(f):  # the card's 10 tiles in display order: checks that fired first, by severity; (id, severity, count, label)
+    out = []
+    for c in sorted(CHECKS, key=lambda c: (c[0] not in f, ["high", "medium", "low"].index(c[1]))):
+        n = f[c[0]]["count"] if c[0] in f else 0
+        out.append((c[0], f[c[0]]["severity"] if c[0] in f else "ok", n, TILE_ONE[c[0]] if n == 1 else c[3]))
+    return out
+
+
+def checksum(canonical):  # c=: base36 of CRC32 over the canonical string, mod 36**4, 4 characters. Catches mangled links. Not security
+    n, out = zlib.crc32(canonical.encode()) % 36 ** 4, ""
+    for _ in range(4):
+        n, d = divmod(n, 36)
+        out = "0123456789abcdefghijklmnopqrstuvwxyz"[d] + out
+    return out
+
+
+def share_links(f, meta):  # the share link, v1, for each route: the card's numbers only, no name. s= sessions and p= agent actions per agent (a's order, sums to n) are on the card too
+    letters = "".join(LETTERS[a] for a in AGENT_NAMES if AGENT_NAMES[a] in meta["agents"].split(" + "))
+    k = ".".join(str(f[c[0]]["count"]) if c[0] in f else "0" for c in CHECKS)
+    canon = "v=1&a=%s&n=%d&d=%d&k=%s&s=%d&p=%s" % (letters, meta["calls"], meta.get("days", 0), k, meta["sessions"], ".".join(str(x) for x in meta["split"]))
+    return {r: "%s?%s&c=%s%s%s" % (SHARE_R, canon, checksum(canon), UTM, r) for r in ROUTES}
+
+
+def need_parts(f):
+    if not f:
+        return "All %d" % len(CHECKS), "checks clean"
+    return "%d of %d" % (len(f), len(CHECKS)), "check%s a look" % (" needs" if len(f) == 1 else "s need")
+
+
+def x_post(f, meta):  # the prefilled X post, built from the top two non-zero checks in the card's labels, ending with the share link
+    top = [" ".join((fmt(n), lab)) for _, _, n, lab in tile_rows(f) if n][:2]
+    text = X_TEXTS["some" if top else "zero"].format(top=" and ".join(top), checks=len(CHECKS), actions=plural(meta["calls"], "agent action"), link=share_links(f, meta)["x"])
+    return X_POST + quote(text, safe="")
+
+
+def foot_text(meta):  # the card's foot: sessions, the agent split when there are two or more agents, and the byline. Everything in the link's s= and p=
+    names = [a for a in AGENT_NAMES.values() if a in meta["agents"].split(" + ")]
+    split = ""
+    if len(names) > 1 and len(meta["split"]) == len(names):
+        parts = ["%s %s" % (fmt(x), nm) for nm, x in zip(names, meta["split"])]
+        split = " \u00b7 " + (", ".join(parts[:-1]) + " and " + parts[-1]) + " actions"
+    return "%s%s \u00b7 Free check by Excellent" % (plural(meta["sessions"], "session"), split)
+
+
+def card_data(f, meta):  # what the card shows and nothing else: agents, counts, dates, the 10 tiles. No names, paths, commands or projects
+    b, r = need_parts(f)
+    return {"title": "My %s" % (meta["agents"] if meta["sessions"] else "AI agent"), "actions": meta["calls"],
+            "sub": "%s%s" % (plural(meta["calls"], "agent action"), ", " + meta["span"] if meta["span"] else ""),
+            "need_b": b, "need_r": r, "ok": not f, "foot": foot_text(meta),
+            "tiles": [{"n": n, "label": lab, "sev": sev} for _, sev, n, lab in tile_rows(f)], "links": share_links(f, meta)}
 
 
 def summary(f, meta):  # the block your agent shows you: agent names, counts and dates only, nothing from your files
@@ -981,9 +1153,7 @@ def summary(f, meta):  # the block your agent shows you: agent names, counts and
 
 def render(f, meta, anon=None):  # anon: replaces every real name, for a sample report (not used in a scan)
     e = lambda s: html.escape(shown(s))
-    tiles = "".join('<div class="tile%s"><b>%s</b>%s</div>' % ("" if c[0] in f else " ok", fmt(f[c[0]]["count"]) if c[0] in f else "0",
-                    e(TILE_ONE[c[0]] if c[0] in f and f[c[0]]["count"] == 1 else c[3]))
-                    for c in sorted(CHECKS, key=lambda c: (c[0] not in f, ["high", "medium", "low"].index(c[1]))))
+    tiles = "".join('<div class="tile%s"><b>%s</b>%s</div>' % ("" if sev != "ok" else " ok", fmt(n), e(lab)) for _, sev, n, lab in tile_rows(f))
     cards = ""
     for c in sorted([c for c in CHECKS if c[0] in f], key=lambda c: ["high", "medium", "low"].index(f[c[0]]["severity"])):
         x, ex = f[c[0]], ""
@@ -1001,20 +1171,30 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
                   '<div class="exs"><p class="label">Recent examples</p><ul class="ex">%s</ul></div>' % ex if ex else "")
     clean = "".join("<li>%s</li>" % e(c[2]) for c in CHECKS if c[0] not in f)
     who = "you@example.com" if anon else ", ".join(re.sub(r"^(.).*@(.).*?(\.\w+)$", r"\1•••@\2•••\3", x) for x in EMAILS) or "no email found"
-    m = {k: e(fmt(v) if isinstance(v, int) else v) for k, v in meta.items()}
+    m = {k: e(fmt(v) if isinstance(v, int) else v) for k, v in meta.items() if k != "split"}
     title = e("My %s" % (meta["agents"] if meta["sessions"] else "AI agent"))
     sub = e("%s%s" % (plural(meta["calls"], "agent action"), ", " + meta["span"] if meta["span"] else ""))
     need = "<b>%d of %d</b> checks %s a look" % (len(f), len(CHECKS), "needs" if len(f) == 1 else "need") if f else "<b>All %d checks clean</b>" % len(CHECKS)
+    data = json.dumps(card_data(f, meta), separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    sha = base64.b64encode(hashlib.sha256(SCRIPT_JS.encode("utf-8")).digest()).decode()
+    CSP = CSP_FMT % sha
+    xhref = html.escape(x_post(f, meta))
+    copylink = html.escape(share_links(f, meta)["copy"])
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="{CSP}"><meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Your agents' check-up · Excellent</title>
 <style>{CSS}</style></head><body>
 <header class="top"><div class="wrap">{LOCKUP}<span class="label">Free check-up · {m['date']}</span></div></header>
 <main class="wrap"><a class="back" href="#">← Back to the full report</a>
 <section class="hero"><h1>Your agents' check-up</h1><p class="lede">What your AI coding agents did on this Mac, read from their own logs on {m['date']}. This script showed your agent only a short summary: counts, agent names, dates and where this page is. Nothing else it read left this Mac.</p></section>
 <section class="score" id="card"><div class="score-in">{LOCKUP}<h2>{title} <span class="nw">check-up</span><span class="sub"><span class="sep"> · </span>{sub}</span></h2><p class="need{'' if f else ' ok'}"><i></i>{need}</p>
-<div class="grid">{tiles}</div><div class="foot"><small>{e(plural(meta['sessions'], 'session'))} · Free check by Excellent</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
+<div class="grid">{tiles}</div><div class="foot"><small>{e(foot_text(meta))}</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
 <p class="share"><a class="btn2" href="#card">Show only the card{ARROW}</a><span>Sized for a screenshot, and safe to share: the card holds counts, agent names and dates only, with no emails, sites, folders, commands or keys. Everything below is just for you.</span></p>
+<section class="tools" id="share"><p class="label">Share your card</p>
+<div class="row"><button type="button" class="btn2" id="bvid">Save video</button><button type="button" class="btn2" id="bimg">Save image</button><button type="button" class="btn2" id="bcopy">Copy share link</button><a class="btn2" href="{xhref}" target="_blank" rel="noopener noreferrer">Post on X{ARROW}</a></div>
+<p class="hint">Attach the video you just saved. The post already has your link in it.</p>
+<code id="lnk">{copylink}</code><p id="sstat" class="hint" role="status"></p><canvas id="vid" hidden></canvas>
+<p class="hint">This page sends nothing. Save video and Save image make the file on your Mac. The share link holds the card's numbers only: counts, agent names, the days your logs span, your session count and your agent actions per agent. It has no name, path or email.</p></section>
 <section class="sec" id="found"><div class="head"><p class="label">Just for you <span class="pill">Private</span></p><h2>What we found</h2><p class="lede">What happened, why it matters, and what you can do yourself. Examples are masked: your email shows as ‹your email›.</p></div>
 {cards or '<p class="lede">Nothing to flag. Your agents passed every check.</p>'}
 {'<div class="cleanbox"><p class="label">Came back clean</p><ul class="clean">%s</ul></div>' % clean if clean else ''}</section>
@@ -1023,12 +1203,13 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
 <ul class="tiers"><li><span class="pill solid">Free</span><b>See what your agents did</b><p>This page is a one-time look back. Excellent for Mac shows the same findings whenever you scan, with no account needed.</p></li>
 <li><span class="pill">Pro</span><b>Stop it as it happens</b><p>It blocks or asks before risky actions, turns your rules into the Mac's own sandbox, scans in the background and alerts you.</p><p>Pro is $6 a month or $60 a year. Pro is sold in the US for now.</p></li>
 <li class="req"><p>For Macs with Apple silicon and macOS 14 or later. Excellent for Mac today; a version for Linux servers comes next, then Windows.</p></li></ul></section>
-<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page loads nothing and sends nothing. Your agent saw only the short summary the script printed.</p></div><div class="method">
+<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page sends nothing and loads nothing. Its one small script only draws your card on this page. Your agent saw only the short summary the script printed.</p></div><div class="method">
 <div><h3>How this check worked</h3><p>Your agent saved a Python script where you could read it (~/excellent-free-scan/scan.py), checked it, and ran it. It read {e(plural(meta['sessions'], 'session'))} ({m['gb']} of logs) in {m['secs']}, {e(plural(meta['rulefiles'], 'instruction file'))} with {e(plural(meta['rules'], 'rule'))} it can check (never delete, never open, never run), and your hook settings. It looked for {e(who)} as your email.</p></div>
-<div><h3>What it never did</h3><p>It used no network and changed no file except this page. It kept no key or email, and never opened Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos data or app containers in Library, other drives, or a folder your rules name as never to open or read, once it had read that rule. This page loads nothing.</p></div>
+<div><h3>What it never did</h3><p>It used no network and changed no file except this page. It kept no key or email, and never opened Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos data or app containers in Library, other drives, or a folder your rules name as never to open or read, once it had read that rule. This page loads nothing and sends nothing: Save video and Save image make the file on your Mac, and the share link holds the card's numbers only.</p></div>
 <div><h3>Limits</h3><p>Logs go back only as far as your agents keep them (Claude Code: 30 days unless you change it). Keys count only when they have a known shape; test and example keys are left out. The rules are the Excellent app's, simplified, so counts can differ a little.</p></div>
 <div><h3>To delete this page</h3><p><code>rm -r ~/excellent-free-scan</code></p></div></div></section></main>
-<footer><div class="wrap">{LOCKUP}<span>A free check by Excellent · {m['date']}</span></div></footer></body></html>"""
+<footer><div class="wrap">{LOCKUP}<span>A free check by Excellent · {m['date']}</span></div></footer>
+<script type="application/json" id="card-data">{data}</script><script>{SCRIPT_JS}</script></body></html>"""
 
 
 def run(args):
@@ -1100,9 +1281,11 @@ def run(args):
             bh[0]["missing"].replace(HOME, "~")), examples=[{"text": "%s hook in %s needs %s" % (b["event"], b["file"].replace(HOME, "~"),
             b["missing"].replace(HOME, "~")), "agent": b["agent"], "ts": "", "project": "", "outcome": "ran", "event": b["event"]} for b in bh[:3]])
     days = sorted(d[:10] for r in results for d in (r["start"], r["end"]) if re.match(r"\d{4}-\d\d-\d\d", d))
+    span = (datetime.strptime(days[-1], "%Y-%m-%d") - datetime.strptime(days[0], "%Y-%m-%d")).days + 1 if days else 0  # the days the logs span, first and last day included
     meta = {"date": datetime.now().strftime("%B %-d, %Y"), "sessions": len(results), "calls": sum(r["calls"] for r in results),
             "agents": " + ".join(AGENT_NAMES[a] for a in AGENT_NAMES if any(r["agent"] == a for r in results)) or "no agent logs found",
-            "span": "%s – %s" % (day(days[0]), day(days[-1])) if days else "", "secs": n(round(time.time() - t0), "second"),
+            "split": [sum(r["calls"] for r in results if r["agent"] == a) for a in AGENT_NAMES if any(r["agent"] == a for r in results)],  # agent actions per agent, in the card's agent order (the link's p=)
+            "span": "%s – %s" % (day(days[0]), day(days[-1])) if days else "", "days": span, "secs": n(round(time.time() - t0), "second"),
             "gb": "%.1f GB" % (sum(r["bytes"] for r in results) / 1e9), "rules": sum(map(len, written.values())), "rulefiles": nfiles}
     return f, meta, results
 

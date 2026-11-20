@@ -101,6 +101,23 @@ try:
     check(not re.search(r"[/~@‹]", ctext.replace("excellent.so/scan", "")) and not leaks(ctext), "card holds no path, email or account name")
     check('href="#card"' in page and "#card:target" in page, "card-only view (#card)")
 
+    # the share link and the card's JSON block: numbers, agent names and dates only
+    blk = re.search(r'<script type="application/json" id="card-data">(.*?)</script>', page, re.S)
+    cd = json.loads(blk.group(1)) if blk else {}
+    links = cd.get("links", {})
+    link = links.get("copy", "")
+    check(re.fullmatch(r"https://excellent\.so/r\?v=1&a=cxg&n=8&d=7&k=\d+(\.\d+){9}&s=\d+&p=\d+(\.\d+){2}&c=[0-9a-z]{4}&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy", link) is not None,
+          "share link matches the v1 format, 3 agents, 8 actions, 7 days (%s)" % link)
+    qs = dict(x.split("=") for x in link.split("?")[1].split("&"))
+    check(sum(int(x) for x in qs.get("p", "x").split(".") if x.isdigit()) == 8 and qs.get("s", "").isdigit() and int(qs["s"]) >= 3, "link carries the session count and agent actions per agent (sum = actions)")
+    check(not leaks(link) and not leaks(blk.group(1) if blk else "x") and not re.search(r"[~@‹]|/users|%2f|\\\\", (link + blk.group(1)).lower() if blk else "x"),
+          "share link and card JSON hold no account name, path or email")
+    check(set(cd) == {"title", "actions", "sub", "need_b", "need_r", "ok", "foot", "tiles", "links"} and all(set(t) == {"n", "label", "sev"} for t in cd.get("tiles", [])),
+          "card JSON holds only the card's fields (title, counts, labels)")
+    xl = re.search(r'href="(https://x\.com/intent/post\?text=[^"]*)"', page)
+    check(xl is not None and not leaks(xl.group(1)) and __import__("urllib.parse").parse.unquote(xl.group(1)).endswith(links.get("x", "?")), "X post holds no name and ends with the share link")
+    check(" by=" not in page and "&by=" not in page and 'id="by"' not in page, "no name field and no by= anywhere")
+
     # an error: the traceback names the report's folder, and must show it as ~/…
     put(home + "/afile", "")
     r = run([sys.executable, SCAN, "--out", home + "/afile/report.html"], home)

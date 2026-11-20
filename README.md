@@ -10,6 +10,7 @@ This repository holds the script and the prompt, so you can read both before you
 - `scan.py`: the script. Python 3.9 or later, standard library only.
 - `PROMPT.md`: the prompt. It holds `scan.py` unchanged, its SHA-256 and a short extractor.
 - `build_prompt.py`: builds `PROMPT.md` from `scan.py`.
+- `share-format.json`: the share link's format (v1), with worked examples; `build_share_format.py` regenerates it.
 - `SHA256SUMS`: the SHA-256 of `scan.py` and `PROMPT.md`.
 - `tests/`: tests that run in a fake home folder.
 
@@ -69,10 +70,15 @@ once it has read that rule.
 One file: `~/excellent-free-scan/report.html`. The script is saved next to it, as `~/excellent-free-scan/scan.py`,
 by the prompt's extractor or by your agent. To delete both: `rm -r ~/excellent-free-scan`.
 
-The report masks emails and keys in its examples. It loads nothing: its Content-Security-Policy is
-`default-src 'none'`. The share card at the top holds only counts, agent names and dates. The rest of the page is for
-you, and it names sites, projects and log files. The page has two links to excellent.so, the share card's and "Get Excellent for Mac";
-both carry `utm_` tags.
+The report masks emails and keys in its examples. It loads nothing from the network: its Content-Security-Policy is
+`default-src 'none'`, plus one inline script allowed by its SHA-256 and `blob:` images and video. That script draws the
+share card for Save video and Save image, on your Mac. The share card at the top holds only counts, agent names and
+dates. The rest of the page is for you, and it names sites, projects and log files.
+
+Nothing leaves your Mac unless you click. The share buttons: Save video and Save image save the card as a file; Copy
+share link copies an excellent.so/r link that carries only the card's numbers and which agents ran; Post on X opens
+x.com with the card's lines and that link. The page also links to excellent.so/scan ("Run yours free") and to "Get
+Excellent for Mac". The excellent.so links carry `utm_` tags.
 
 ## What it sends
 
@@ -110,7 +116,7 @@ Run yours free: excellent.so/scan
 shasum -a 256 -c SHA256SUMS
 ```
 
-The SHA-256 of `scan.py` is `0cc0c1f57837cd96d43574e48dac495c7b835379291bc4f368a605695d015229`. The prompt states the
+The SHA-256 of `scan.py` is `7a8e97a57072c406304bd13dcca9d8047ea30e7cfbd2685ebc3ffb5530d92d1b`. The prompt states the
 same value and has your agent check the saved script against it. excellent.so/#scan shows the same value. `SHA256SUMS`
 also lists `PROMPT.md`: that is the hash of the whole file, not only the text you paste.
 

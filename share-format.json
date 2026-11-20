@@ -1,0 +1,224 @@
+{
+  "format": "excellent-free-scan share link",
+  "version": 1,
+  "url": "https://excellent.so/r",
+  "link_template": "https://excellent.so/r?v=1&a=<a>&n=<n>&d=<d>&k=<k>&s=<s>&p=<p>&c=<c>&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=<x|linkedin|copy|video|image>",
+  "params": {
+    "v": "format version, always 1",
+    "a": "agent letters in card order: c = Claude Code, x = Codex, g = Grok Build. Empty when no agent logs were found",
+    "n": "agent actions read (integer)",
+    "d": "days the logs span, first and last day included (integer; 0 when no dates)",
+    "k": "the 10 counts in CHECKS order (the order of the 'checks' list below, NOT the card's display order), dot-separated",
+    "s": "sessions read (integer). Added with p; the card's footer shows it. Optional: links without s and p stay valid",
+    "p": "agent actions per agent, dot-separated, in the same order as the letters in a, so it has one number per letter and the numbers sum to n. Empty when a is empty (then n is 0). s and p come together or not at all. The card's footer shows the split when two or more agents were read",
+    "c": "4-character checksum, see 'checksum'. Catches truncated or mangled links. It is not security and must never be described as security: the scan holds no secret, so anyone can make a valid link",
+    "utm_source": "free-scan",
+    "utm_medium": "share",
+    "utm_campaign": "launch",
+    "utm_content": "which share button made the link: x (Post on X), copy (Copy share link), video, image, linkedin. The report page today uses x and copy; the others are reserved for the site and later buttons"
+  },
+  "no_name": "There is no name parameter. Nothing in the link, the card, the video or the image carries a name.",
+  "checksum": {
+    "canonical": "v=1&a=<a>&n=<n>&d=<d>&k=<k>&s=<s>&p=<p> (a link without s and p, the first v1 links, uses v=1&a=<a>&n=<n>&d=<d>&k=<k>): this param order, the values exactly as they appear in the link, no URL-encoding (every character is already URL-safe)",
+    "c": "zlib.crc32(canonical.encode()) % 36**4, written in base36 with digits 0-9a-z, lowercase, left-padded with '0' to 4 characters",
+    "python": "n = zlib.crc32(canonical.encode()) % 36**4; c = ''.join('0123456789abcdefghijklmnopqrstuvwxyz'[(n // 36**i) % 36] for i in (3, 2, 1, 0))"
+  },
+  "examples": {
+    "with_findings": {
+      "canonical": "v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0&s=12&p=200.140",
+      "c": "8lyf",
+      "links": {
+        "x": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0&s=12&p=200.140&c=8lyf&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=x",
+        "linkedin": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0&s=12&p=200.140&c=8lyf&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=linkedin",
+        "copy": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0&s=12&p=200.140&c=8lyf&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy",
+        "video": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0&s=12&p=200.140&c=8lyf&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=video",
+        "image": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0&s=12&p=200.140&c=8lyf&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=image"
+      },
+      "meta": {
+        "agents": "Claude Code + Codex",
+        "actions": 340,
+        "days": 18,
+        "sessions": 12,
+        "actions_per_agent": [
+          200,
+          140
+        ],
+        "counts_by_id": {
+          "secrets_in_logs": 4,
+          "force_push": 1
+        }
+      }
+    },
+    "all_zero": {
+      "canonical": "v=1&a=cx&n=340&d=18&k=0.0.0.0.0.0.0.0.0.0&s=12&p=200.140",
+      "c": "btsg",
+      "links": {
+        "x": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.0.0.0.0.0.0.0.0&s=12&p=200.140&c=btsg&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=x",
+        "linkedin": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.0.0.0.0.0.0.0.0&s=12&p=200.140&c=btsg&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=linkedin",
+        "copy": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.0.0.0.0.0.0.0.0&s=12&p=200.140&c=btsg&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy",
+        "video": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.0.0.0.0.0.0.0.0&s=12&p=200.140&c=btsg&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=video",
+        "image": "https://excellent.so/r?v=1&a=cx&n=340&d=18&k=0.0.0.0.0.0.0.0.0.0&s=12&p=200.140&c=btsg&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=image"
+      },
+      "meta": {
+        "agents": "Claude Code + Codex",
+        "actions": 340,
+        "days": 18,
+        "sessions": 12,
+        "actions_per_agent": [
+          200,
+          140
+        ],
+        "counts_by_id": {}
+      }
+    },
+    "three_agents": {
+      "canonical": "v=1&a=cxg&n=1204&d=31&k=17.0.3.12.0.0.0.2.5.0&s=87&p=700.380.124",
+      "c": "8meb",
+      "links": {
+        "x": "https://excellent.so/r?v=1&a=cxg&n=1204&d=31&k=17.0.3.12.0.0.0.2.5.0&s=87&p=700.380.124&c=8meb&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=x",
+        "linkedin": "https://excellent.so/r?v=1&a=cxg&n=1204&d=31&k=17.0.3.12.0.0.0.2.5.0&s=87&p=700.380.124&c=8meb&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=linkedin",
+        "copy": "https://excellent.so/r?v=1&a=cxg&n=1204&d=31&k=17.0.3.12.0.0.0.2.5.0&s=87&p=700.380.124&c=8meb&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy",
+        "video": "https://excellent.so/r?v=1&a=cxg&n=1204&d=31&k=17.0.3.12.0.0.0.2.5.0&s=87&p=700.380.124&c=8meb&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=video",
+        "image": "https://excellent.so/r?v=1&a=cxg&n=1204&d=31&k=17.0.3.12.0.0.0.2.5.0&s=87&p=700.380.124&c=8meb&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=image"
+      },
+      "meta": {
+        "agents": "Claude Code + Codex + Grok Build",
+        "actions": 1204,
+        "days": 31,
+        "sessions": 87,
+        "actions_per_agent": [
+          700,
+          380,
+          124
+        ],
+        "counts_by_id": {
+          "email_out": 17,
+          "secrets_in_logs": 3,
+          "written_rules": 5,
+          "secret_files": 12,
+          "publish_deploy": 2
+        }
+      }
+    },
+    "no_agents": {
+      "canonical": "v=1&a=&n=0&d=0&k=0.0.0.0.0.0.0.0.0.0&s=0&p=",
+      "c": "uz5o",
+      "links": {
+        "x": "https://excellent.so/r?v=1&a=&n=0&d=0&k=0.0.0.0.0.0.0.0.0.0&s=0&p=&c=uz5o&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=x",
+        "linkedin": "https://excellent.so/r?v=1&a=&n=0&d=0&k=0.0.0.0.0.0.0.0.0.0&s=0&p=&c=uz5o&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=linkedin",
+        "copy": "https://excellent.so/r?v=1&a=&n=0&d=0&k=0.0.0.0.0.0.0.0.0.0&s=0&p=&c=uz5o&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy",
+        "video": "https://excellent.so/r?v=1&a=&n=0&d=0&k=0.0.0.0.0.0.0.0.0.0&s=0&p=&c=uz5o&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=video",
+        "image": "https://excellent.so/r?v=1&a=&n=0&d=0&k=0.0.0.0.0.0.0.0.0.0&s=0&p=&c=uz5o&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=image"
+      },
+      "meta": {
+        "agents": "none",
+        "actions": 0,
+        "days": 0,
+        "sessions": 0,
+        "actions_per_agent": [],
+        "counts_by_id": {}
+      }
+    },
+    "first_v1_without_s_and_p": {
+      "canonical": "v=1&a=cx&n=340&d=18&k=0.0.4.0.1.0.0.0.0.0",
+      "c": "43gk",
+      "note": "The first v1 links had no s and p. The site keeps accepting them and shows no session count or agent split for them. The scan no longer makes them."
+    }
+  },
+  "agents": {
+    "c": "Claude Code",
+    "x": "Codex",
+    "g": "Grok Build"
+  },
+  "checks": [
+    {
+      "index": 0,
+      "id": "email_out",
+      "severity": "high",
+      "title": "Your email was sent to websites",
+      "label": "requests carried my email to websites",
+      "label_one": "request carried my email to a website"
+    },
+    {
+      "index": 1,
+      "id": "public_submit",
+      "severity": "medium",
+      "title": "Your email was typed into web forms",
+      "label": "times my email went into a web form",
+      "label_one": "time my email went into a web form"
+    },
+    {
+      "index": 2,
+      "id": "secrets_in_logs",
+      "severity": "high",
+      "title": "API keys are sitting in your agent logs",
+      "label": "API keys sitting in plain-text logs",
+      "label_one": "API key sitting in a plain-text log"
+    },
+    {
+      "index": 3,
+      "id": "secret_files",
+      "severity": "low",
+      "title": "Agents opened keys and secrets files",
+      "label": "actions on .env, SSH or keychain secrets",
+      "label_one": "action on .env, SSH or keychain secrets"
+    },
+    {
+      "index": 4,
+      "id": "force_push",
+      "severity": "high",
+      "title": "Agents force-pushed",
+      "label": "force pushes",
+      "label_one": "force push"
+    },
+    {
+      "index": 5,
+      "id": "no_verify",
+      "severity": "medium",
+      "title": "Safety checks were skipped",
+      "label": "git commands that skipped or moved git hooks",
+      "label_one": "git command that skipped or moved git hooks"
+    },
+    {
+      "index": 6,
+      "id": "protected_delete",
+      "severity": "high",
+      "title": "Never-delete folders were touched",
+      "label": "deletes of folders I marked never-delete",
+      "label_one": "delete of a folder I marked never-delete"
+    },
+    {
+      "index": 7,
+      "id": "publish_deploy",
+      "severity": "low",
+      "title": "Things were published or deployed",
+      "label": "publishes or deploys",
+      "label_one": "publish or deploy"
+    },
+    {
+      "index": 8,
+      "id": "written_rules",
+      "severity": "medium",
+      "title": "Your own rules were broken",
+      "label": "breaks of rules I wrote for my agents",
+      "label_one": "break of a rule I wrote for my agents"
+    },
+    {
+      "index": 9,
+      "id": "broken_hooks",
+      "severity": "high",
+      "title": "Your hooks fail silently",
+      "label": "hooks failing silently",
+      "label_one": "hook failing silently"
+    }
+  ],
+  "notes": [
+    "label is the card tile's text for any count except 1; label_one is the text for a count of 1.",
+    "The card shows tiles with a count first, by severity, then the rest; the link always uses the CHECKS order.",
+    "Nothing in the link is an account name, path, email, command, project name or time of day. s and p are counts too: no dates of findings, no per-day activity, no hours."
+  ],
+  "x_post_text": {
+    "some": "My AI coding agents' check-up: {top}. A free check counted it from my own Mac's logs. Run yours: {link}",
+    "zero": "I ran a free check on my AI coding agents' logs: all {checks} checks came back clean across {actions}. Run yours: {link}"
+  }
+}
