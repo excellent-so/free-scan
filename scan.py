@@ -422,7 +422,7 @@ def classify(tool, inp, cwd):
         text = "\n".join([inp[k] for k in ("content", "new_string") if isinstance(inp.get(k), str)]
                          + [e["new_string"] for e in inp.get("edits") or [] if isinstance(e, dict) and isinstance(e.get("new_string"), str)])
         if tool != "Read" and text and (CODE_NET.search(text) or re.search(r"\b(curl|wget)\b", text)) and has_email(text) and email_in_header(text):
-            out.append(("email_out", text, None, foreign(hosts_in(text))))
+            out.append(("email_out", text, "script input", foreign(hosts_in(text))))
     if tool == "WebFetch" and isinstance(inp.get("url"), str) and has_email(inp["url"]) and foreign(hosts_in(inp["url"])[:1] or [""]):
         out.append(("email_out", inp["url"], None, hosts_in(inp["url"])))
     if EMAILS and any(k in tool.lower() for k in ("chrome", "browser", "playwright", "puppeteer", "computer")):
@@ -431,8 +431,8 @@ def classify(tool, inp, cwd):
                for e in EMAILS for m in re.finditer(re.escape(e), flat, re.I)):
             hs = foreign(hosts_in(flat))
             sent = re.search(r"submit|\"key\":\s*\"(Return|Enter)\"|\.requestSubmit|\.submit\(", flat, re.I)
-            out.append(("public_submit", "Browser agent typed your email " + ("on " + ", ".join(hs) if hs else "into a web page")
-                        + (" and submitted the form" if sent else ""), None, hs))
+            out.append(("public_submit", "Browser tool input containing your email" + (" for " + ", ".join(hs) if hs else "")
+                        + (" with a form submission instruction" if sent else ""), None, hs))
     return out
 
 
@@ -491,9 +491,33 @@ GROK_TOOLS = {"run_terminal_command": "Bash", "monitor": "Bash", "Shell": "Bash"
 ALIASES = {"command": ("cmd", "command_line"), "file_path": ("path", "target_file", "absolute_path", "filePath"),
            "content": ("contents", "file_text"), "new_string": ("newString", "new_str")}
 CWD_RX = re.compile(rb'"cwd":"((?:[^"\\]|\\.)*)"')
-BLOCKED = {"claude": re.compile(r"hook|blocked|denied|not allowed|refus|permission", re.I),
-           "codex": re.compile(r"rejected by (the )?user|sandbox (denied|blocked)|not permitted by policy|blocked by (?:\w+ )?hook", re.I),
+BLOCKED = {"claude": re.compile(r"^(?:error:\s*)?(?:command blocked|blocked by|rejected by (?:the )?user|permission requested|user (?:denied|rejected)|this (?:tool use|command) was (?:denied|blocked)|pretooluse:.*(?:block|denied))", re.I),
+           "codex": re.compile(r"(?:command )?blocked by (?:\w+ )?hook|rejected by (the )?user|sandbox (denied|blocked)|not permitted by policy|blocked by (?:\w+ )?hook", re.I),
            "grok": re.compile(r"denied by (a |the )?(pretooluse )?hook|blocked by (a |the )?(\w+ )?hook|permission (was )?denied|rejected by (the )?user", re.I)}
+
+
+EMAIL_RULES = ("email_out", "public_submit")
+EMAIL_OUTCOMES = ("local script input", "result unknown", "tool reported failure", "blocked", "tool reported success")
+
+
+def codex_outcome(output):
+    # Only the terminal wrapper can establish process completion. Its stdout may quote a different exit code.
+    if isinstance(output, str):
+        parsed = jstr(output)
+        if isinstance(parsed, dict):
+            output = parsed
+    if isinstance(output, dict):
+        code = (output.get("metadata") or {}).get("exit_code") if isinstance(output.get("metadata"), dict) else None
+        if type(code) is int:
+            return "ran" if code == 0 else "failed"
+        output = output.get("output")
+    if not isinstance(output, str):
+        return "unknown"
+    header = re.split(r"(?im)^(?:final output|output):", output, maxsplit=1)[0].strip()
+    if BLOCKED["codex"].match(header):
+        return "blocked"
+    m = re.search(r"(?im)^(?:process exited with code|exit code:) (-?\d+)\s*$", header)
+    return ("ran" if int(m[1]) == 0 else "failed") if m else "unknown"
 
 
 def jstr(t):
@@ -514,15 +538,17 @@ def scan_file(job):
     told, pend = {"n": 0, "first": {}}, {}
 
     def add(cid, found, ts):
-        evs = [{"rule": r, "ts": ts, "text": mask(t, 220), "detail": d, "hosts": (h or [])[:4], "outcome": "ran", "at": told["n"]}
+        evs = [{"rule": r, "ts": ts, "text": mask(t, 220), "detail": d, "hosts": (h or [])[:4], "outcome": "unknown" if r in EMAIL_RULES else "ran", "at": told["n"], "call": cid if isinstance(cid, str) else None}
                for r, t, d, h in found]
         res["events"] += evs
-        if cid is not None and evs:
+        if isinstance(cid, str) and cid and evs:
             pend[cid] = evs
 
-    def result(cid, text, failed=True):
-        for e in pend.pop(cid, []):
-            e["outcome"] = "blocked" if BLOCKED[agent].search(text) else "failed" if failed else "ran"
+    def result(cid, outcome):
+        events = pend.get(cid, []) if outcome == "unknown" else pend.pop(cid, [])
+        for e in events:
+            if outcome != "unknown" or e["rule"] in EMAIL_RULES:
+                e["outcome"] = outcome
     try:
         f = open(path, "rb")
     except OSError:
@@ -541,17 +567,21 @@ def scan_file(job):
                     m = not res["cwd"] and CWD_RX.search(line, 0, 4000)
                     if m:
                         res["cwd"] = json.loads(b'"' + m.group(1) + b'"')
-                    if b'"tool_use"' in line and b'"type":"assistant"' in line:
+                    if b'"tool_use"' in line:
                         o = json.loads(line)
                         for x in (o.get("message") or {}).get("content") or [] if o.get("type") == "assistant" else []:
                             if isinstance(x, dict) and x.get("type") == "tool_use":  # (api-request-blob records repeat calls)
                                 res["calls"] += 1
                                 add(x.get("id"), classify(x.get("name") or "", x.get("input") or {}, o.get("cwd") or res["cwd"]), o.get("timestamp") or "")
-                    elif pend and b'"is_error":true' in line and b'"tool_result"' in line:
-                        for x in (json.loads(line).get("message") or {}).get("content") or []:
+                    elif pend and b'"tool_result"' in line:
+                        o = json.loads(line)
+                        for x in ((o.get("message") or {}).get("content") or []) if o.get("type") == "user" else []:
                             if isinstance(x, dict) and x.get("type") == "tool_result" and x.get("tool_use_id") in pend:
                                 c = x.get("content")
-                                result(x["tool_use_id"], (c if isinstance(c, str) else " ".join(str(y.get("text", "")) for y in c or [] if isinstance(y, dict)))[:300])
+                                text = c if isinstance(c, str) else " ".join(str(y.get("text", "")) for y in c or [] if isinstance(y, dict))
+                                failed = x.get("is_error", False)
+                                outcome = ("blocked" if BLOCKED[agent].search(text) else "failed") if failed is True else "ran" if failed is False and (x.get("is_error") is False or text.strip()) else "unknown"
+                                result(x["tool_use_id"], outcome)
                 elif agent == "codex":
                     if line.startswith(b'{"timestamp":"'):
                         res["end"] = line[14:38].decode("ascii", "replace")
@@ -568,11 +598,9 @@ def scan_file(job):
                             cmds = [m.group(1) for m in re.finditer(r'cmd\s*:\s*"((?:[^"\\]|\\.)*)"', text)]  # exec: tools.exec_command({cmd:"…"})
                             for c in [jstr('"' + c + '"') for c in cmds] + ([jstr(text)] if p.get("name") in ("shell", "exec_command") else []):
                                 found += classify("Bash", c if isinstance(c, dict) else {"command": c}, res["cwd"]) if c else []
-                            add(cid, found, line[14:38].decode("ascii", "replace"))
-                        elif cid in pend:
-                            o = p.get("output")
-                            t = (o if isinstance(o, str) else json.dumps(o))[:3000]
-                            result(cid, t, bool(re.search(r"exit(?:ed)?(?: with)?(?: code)?[: ]+[1-9]\d*\b|process exited with code [1-9]", t, re.I)))
+                            add(cid, found, json.loads(line).get("timestamp") or "")
+                        elif pty in ("function_call_output", "custom_tool_call_output") and cid in pend:
+                            result(cid, codex_outcome(p.get("output")))
                 elif agent == "grok":
                     if line.startswith(b'{"type":"assistant"') and b'"tool_calls"' in line:
                         for c in json.loads(line).get("tool_calls") or []:
@@ -585,7 +613,11 @@ def scan_file(job):
                     elif pend and line.startswith(b'{"type":"tool_result"'):
                         m = re.search(rb'"tool_call_id"\s*:\s*"([^"]{1,200})"', line)
                         if m and m.group(1).decode() in pend:
-                            result(m.group(1).decode(), line[:4000].decode("utf-8", "replace"), False)
+                            record = json.loads(line)
+                            text = str(record.get("content", ""))
+                            status = record.get("status")
+                            outcome = "blocked" if BLOCKED[agent].search(text) else "failed" if status in ("failed", "error") else "ran" if status in ("completed", "success") else "unknown"
+                            result(m.group(1).decode(), outcome)
             except ValueError:  # a line that isn't whole JSON (a log still being written)
                 continue
     for e in res["events"]:
@@ -790,16 +822,16 @@ def broken_hooks():  # hooks whose program is gone fail silently on every action
 
 # ---------- the report ----------
 CHECKS = [  # id, severity, title, score-card label, why it matters, what you can do yourself
-    ("email_out", "high", "Your email was sent to websites", "requests carried my email to websites",
-     "Agents put your email address into requests to other sites, or into scripts that make them, most often as the contact in a User-Agent header. Sites that got those requests have it in their logs.",
+    ("email_out", "high", "Your email in request commands or scripts", "request or script inputs contained my email",
+     "Your address appeared in a request command or in code supplied to a file-writing tool.",
      "Ask your agents to use a project URL as the contact instead, and check your scripts for your address."),
-    ("public_submit", "medium", "Your email was typed into web forms", "times my email went into a web form",
-     "A browser agent or a command put your email into a web page, a form or a request body.", "Check each signup or form was one you meant."),
+    ("public_submit", "medium", "Your email in form or request inputs", "form or request inputs contained my email",
+     "A browser tool or a request command included your address in its input.", "Check each signup or form was one you meant."),
     ("secrets_in_logs", "high", "API keys are sitting in your agent logs", "API keys sitting in plain-text logs",
-     "Agent logs keep everything an agent saw, in plain text. Anything that can read your home folder (a backup, a sync tool, another agent) can read these keys.",
+     "The scan found values matching known key formats in plain-text agent logs. Anyone with access to those files can read the values.",
      "Make a new key at each provider and retire the old one. Then delete those log files or take the keys out."),
     ("secret_files", "low", "Agents opened keys and secrets files", "actions on .env, SSH or keychain secrets",
-     "Agents read, edited or ran commands on .env files, SSH keys or your keychain. Often that is part of the job, but what they read goes to the model provider and stays in the log.",
+     "A recorded tool call named a .env file, an SSH key or your keychain. Its input identifies the file or command. A matching key value in a transcript is a separate finding.",
      "Keep real keys out of the folders agents work in; give agents environment variables or a secrets manager."),
     ("force_push", "high", "Agents force-pushed", "force pushes",
      "Agents force-pushed, which replaces history on the server. On a shared branch that can erase other people's work.",
@@ -818,7 +850,7 @@ CHECKS = [  # id, severity, title, score-card label, why it matters, what you ca
      "Hooks in your agent settings point to a program that no longer exists, so they fail each time they run.",
      "Open the settings file and fix the path."),
 ]
-TILE_ONE = {"email_out": "request carried my email to a website", "public_submit": "time my email went into a web form",
+TILE_ONE = {"email_out": "request or script input contained my email", "public_submit": "form or request input contained my email",
             "secrets_in_logs": "API key sitting in a plain-text log", "secret_files": "action on .env, SSH or keychain secrets",
             "force_push": "force push", "no_verify": "git command that skipped or moved git hooks",
             "protected_delete": "delete of a folder I marked never-delete", "publish_deploy": "publish or deploy",
@@ -1025,12 +1057,15 @@ function draw(c, W, t) {
   c.save(); c.translate(76, 68); c.scale(22 / 219, 22 / 219); c.fillStyle = P.ink; c.fill(MARK, "evenodd"); c.translate(-28.3, 0); c.fill(WORDS); c.restore();
   c.globalAlpha = a(0.1, 0.5); c.fillStyle = P.ink; c.font = "400 38px " + SERIF; c.fillText(D.title + " check-up", 76, 150);
   c.globalAlpha = a(0.5, 0.5); c.fillStyle = P.faint; c.font = "400 20px " + SANS;
-  c.fillText(tick(D.sub, Math.round(D.actions * ease(a(0.6, 1.8)))), 76, 184);
+  c.fillText(tick(D.sub, Math.round(D.actions * ease(a(0.6, 1.8)))), 76, D.evidence ? 168 : 184);
   var shown = 0, firing = 0;
   D.tiles.forEach(function (x, k) { if (x.sev !== "ok") { firing++; if (t >= T0 + k * STEP) shown++; } });
   c.globalAlpha = a(1, 0.4); c.beginPath(); c.arc(80, 227, 4, 0, 7); c.fillStyle = D.ok ? P.ok : P.hi; c.fill();
   c.font = "600 20px " + SANS; c.fillStyle = P.ink; var b = D.need_b.charAt(0) >= "0" && D.need_b.charAt(0) <= "9" ? tick(D.need_b, shown) : D.need_b;
   c.fillText(b, 96, 233); c.font = "400 20px " + SANS; c.fillStyle = P.quiet; c.fillText(" " + D.need_r, 96 + c.measureText(b).width + 6, 233);
+  var evidence = D.evidence || [];
+  c.font = "400 15px " + SANS; c.fillStyle = P.quiet;
+  evidence.forEach(function (line, j) { c.fillText(line, 76, 189 + j * 18, 1048); });
   var tw = (1048 - 40) / 5;
   D.tiles.forEach(function (x, k) {
     var gx = 76 + (k % 5) * (tw + 10), gy = 256 + Math.floor(k / 5) * 160, st = T0 + k * STEP, f = a(st, 0.3);
@@ -1109,10 +1144,20 @@ def checksum(canonical):  # c=: base36 of CRC32 over the canonical string, mod 3
     return out
 
 
+def evidence_text(counts):
+    return ", ".join("%s %s" % (fmt(n), label) for n, label in zip(counts, EMAIL_OUTCOMES) if n)
+
+
+def email_evidence(f):
+    return [(rid, f[rid]["evidence"]) for rid in EMAIL_RULES if rid in f and "evidence" in f[rid]]
+
+
 def share_links(f, meta):  # the share link, v1, for each route: the card's numbers only, no name. s= sessions and p= agent actions per agent (a's order, sums to n) are on the card too
     letters = "".join(LETTERS[a] for a in AGENT_NAMES if AGENT_NAMES[a] in meta["agents"].split(" + "))
     k = ".".join(str(f[c[0]]["count"]) if c[0] in f else "0" for c in CHECKS)
     canon = "v=1&a=%s&n=%d&d=%d&k=%s&s=%d&p=%s" % (letters, meta["calls"], meta.get("days", 0), k, meta["sessions"], ".".join(str(x) for x in meta["split"]))
+    if email_evidence(f):
+        canon += "&e=" + ".".join(str(n) for rid in EMAIL_RULES for n in f.get(rid, {}).get("evidence", [0] * 5))
     return {r: "%s?%s&c=%s%s%s" % (SHARE_R, canon, checksum(canon), UTM, r) for r in ROUTES}
 
 
@@ -1124,6 +1169,10 @@ def need_parts(f):
 
 def x_post(f, meta):  # the prefilled X post, built from the top two non-zero checks in the card's labels, ending with the share link
     top = [" ".join((fmt(n), lab)) for _, _, n, lab in tile_rows(f) if n][:2]
+    for rid, counts in email_evidence(f):
+        for i, (key, _, _, _) in enumerate([row for row in tile_rows(f) if row[2]][:2]):
+            if key == rid:
+                top[i] += " (" + evidence_text(counts) + ")"
     text = X_TEXTS["some" if top else "zero"].format(top=" and ".join(top), checks=len(CHECKS), actions=plural(meta["calls"], "agent action"), link=share_links(f, meta)["x"])
     return X_POST + quote(text, safe="")
 
@@ -1139,7 +1188,8 @@ def foot_text(meta):  # the card's foot: sessions, the agent split when there ar
 
 def card_data(f, meta):  # what the card shows and nothing else: agents, counts, dates, the 10 tiles. No names, paths, commands or projects
     b, r = need_parts(f)
-    return {"title": "My %s" % (meta["agents"] if meta["sessions"] else "AI agent"), "actions": meta["calls"],
+    evidence = [("Request or script" if rid == "email_out" else "Form or request") + " · " + evidence_text(counts) for rid, counts in email_evidence(f)]
+    return {**({"evidence": evidence} if evidence else {}), "title": "My %s" % (meta["agents"] if meta["sessions"] else "AI agent"), "actions": meta["calls"],
             "sub": "%s%s" % (plural(meta["calls"], "agent action"), ", " + meta["span"] if meta["span"] else ""),
             "need_b": b, "need_r": r, "ok": not f, "foot": foot_text(meta),
             "tiles": [{"n": n, "label": lab, "sev": sev} for _, sev, n, lab in tile_rows(f)], "links": share_links(f, meta)}
@@ -1148,12 +1198,14 @@ def card_data(f, meta):  # what the card shows and nothing else: agents, counts,
 def summary(f, meta):  # the block your agent shows you: agent names, counts and dates only, nothing from your files
     head = " · ".join(filter(None, ["Excellent free scan", meta["agents"], meta["span"], plural(meta["calls"], "action")]))
     rows = ["  %-40s %7s" % (c[2], fmt(f[c[0]]["count"]) if c[0] in f else "0") for c in CHECKS]
-    return "\n".join([head] + rows + ["Run yours free: excellent.so/scan"])
+    evidence = [next(c[2] for c in CHECKS if c[0] == rid) + " — " + evidence_text(counts) for rid, counts in email_evidence(f)]
+    return "\n".join([head] + rows + evidence + ["Run yours free: excellent.so/scan"])
 
 
 def render(f, meta, anon=None):  # anon: replaces every real name, for a sample report (not used in a scan)
     e = lambda s: html.escape(shown(s))
     tiles = "".join('<div class="tile%s"><b>%s</b>%s</div>' % ("" if sev != "ok" else " ok", fmt(n), e(lab)) for _, sev, n, lab in tile_rows(f))
+    card_evidence = "".join("<p>%s</p>" % e(line) for line in card_data(f, meta).get("evidence", []))
     cards = ""
     for c in sorted([c for c in CHECKS if c[0] in f], key=lambda c: ["high", "medium", "low"].index(f[c[0]]["severity"])):
         x, ex = f[c[0]], ""
@@ -1162,7 +1214,7 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
             proj = anon.name("project", s["project"]) if anon and s["project"] else s["project"]
             if txt:
                 ex += "<li><code>%s</code><small>%s</small></li>" % (e(txt), e(" · ".join(filter(None, [
-                    AGENT_NAMES[s["agent"]], day(s["ts"]), proj, "" if s["outcome"] == "ran" else s["outcome"]]))))
+                    AGENT_NAMES[s["agent"]], day(s["ts"]), proj, ("local script input" if s.get("detail") == "script input" else {"ran": "tool reported success", "unknown": "result unknown", "failed": "tool reported failure"}.get(s["outcome"], s["outcome"]) if c[0] in EMAIL_RULES else "" if s["outcome"] == "ran" else s["outcome"])]))))
         cards += ('<details class="find %s" open><summary><span class="sev"><i></i>%s</span><h3>%s</h3><span class="n">%s</span></summary>'
                   '<div class="fb"><p class="what">%s</p><dl class="pair"><div><dt class="label">What this means</dt><dd>%s</dd></div>'
                   '<div><dt class="label">What to do</dt><dd>%s</dd></div></dl>%s%s</div></details>\n') % (
@@ -1188,7 +1240,7 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
 <main class="wrap"><a class="back" href="#">← Back to the full report</a>
 <section class="hero"><h1>Your agents' check-up</h1><p class="lede">What your AI coding agents did on this Mac, read from their own logs on {m['date']}. This script showed your agent only a short summary: counts, agent names, dates and where this page is. Nothing else it read left this Mac.</p></section>
 <section class="score" id="card"><div class="score-in">{LOCKUP}<h2>{title} <span class="nw">check-up</span><span class="sub"><span class="sep"> · </span>{sub}</span></h2><p class="need{'' if f else ' ok'}"><i></i>{need}</p>
-<div class="grid">{tiles}</div><div class="foot"><small>{e(foot_text(meta))}</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
+<div class="grid">{tiles}</div>{card_evidence}<div class="foot"><small>{e(foot_text(meta))}</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
 <p class="share"><a class="btn2" href="#card">Show only the card{ARROW}</a><span>Sized for a screenshot, and safe to share: the card holds counts, agent names and dates only, with no emails, sites, folders, commands or keys. Everything below is just for you.</span></p>
 <section class="tools" id="share"><p class="label">Share your card</p>
 <div class="row"><button type="button" class="btn2" id="bvid">Save video</button><button type="button" class="btn2" id="bimg">Save image</button><button type="button" class="btn2" id="bcopy">Copy share link</button><a class="btn2" href="{xhref}" target="_blank" rel="noopener noreferrer">Post on X{ARROW}</a></div>
@@ -1203,7 +1255,7 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
 <ul class="tiers"><li><span class="pill solid">Free</span><b>See what your agents did</b><p>This page is a one-time look back. Excellent for Mac shows the same findings whenever you scan, with no account needed.</p></li>
 <li><span class="pill">Pro</span><b>Stop it as it happens</b><p>It blocks or asks before risky actions, turns your rules into the Mac's own sandbox, scans in the background and alerts you.</p><p>Pro is $6 a month or $60 a year. Pro is sold in the US for now.</p></li>
 <li class="req"><p>For Macs with Apple silicon and macOS 14 or later. Excellent for Mac today; a version for Linux servers comes next, then Windows.</p></li></ul></section>
-<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page sends nothing and loads nothing. Its one small script only draws your card on this page. Your agent saw only the short summary the script printed.</p></div><div class="method">
+<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page sends nothing and loads nothing. Its one small script only draws your card on this page. The script printed a short summary for your agent.</p></div><div class="method">
 <div><h3>How this check worked</h3><p>Your agent saved a Python script where you could read it (~/excellent-free-scan/scan.py), checked it, and ran it. It read {e(plural(meta['sessions'], 'session'))} ({m['gb']} of logs) in {m['secs']}, {e(plural(meta['rulefiles'], 'instruction file'))} with {e(plural(meta['rules'], 'rule'))} it can check (never delete, never open, never run), and your hook settings. It looked for {e(who)} as your email.</p></div>
 <div><h3>What it never did</h3><p>It used no network and changed no file except this page. It kept no key or email, and never opened Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos data or app containers in Library, other drives, or a folder your rules name as never to open or read, once it had read that rule. This page loads nothing and sends nothing: Save video and Save image make the file on your Mac, and the share link holds the card's numbers only.</p></div>
 <div><h3>Limits</h3><p>Logs go back only as far as your agents keep them (Claude Code: 30 days unless you change it). Keys count only when they have a known shape; test and example keys are left out. The rules are the Excellent app's, simplified, so counts can differ a little.</p></div>
@@ -1228,29 +1280,44 @@ def run(args):
     except Exception:  # no process pool in some sandboxes: one log at a time
         results = [scan_file(j) for j in jobs]
     by, f = {}, {}
+    email_calls = {}
     for r in results:
         if r["agent"] == "grok":
             r["start"], r["end"] = heads[r["path"]][1:]
         for ev in r["events"]:
-            if ev["outcome"] != "blocked" and not ev["untold"]:
+            if (ev["rule"] in EMAIL_RULES or ev["outcome"] != "blocked") and not ev["untold"]:
                 ev.update(agent=r["agent"], project=project_of(r["cwd"]), ts=ev["ts"] or r["start"])
-                by.setdefault(ev["rule"], []).append(ev)
+                if ev["rule"] in EMAIL_RULES and ev["call"] and ev["ts"]:
+                    key = (r["agent"], ev["call"], ev["ts"], ev["rule"], ev["detail"])
+                    old = email_calls.get(key)
+                    if old is None or (old["outcome"] == "unknown" and ev["outcome"] != "unknown"):
+                        email_calls[key] = ev
+                else:
+                    by.setdefault(ev["rule"], []).append(ev)
+    for ev in email_calls.values():
+        by.setdefault(ev["rule"], []).append(ev)
     n = plural
     last = lambda l: day(max(x["ts"] for x in l)) or "recently"
 
     def add(rid, evs, detail, sev=None, examples=None):
         seen, ex = set(), []
         for x in sorted(evs, key=lambda x: x["ts"], reverse=True) if examples is None else []:
-            if x["text"][:70] not in seen and len(ex) < 3:
-                seen.add(x["text"][:70])
+            key = (x["text"][:70], x["outcome"])
+            if key not in seen and len(ex) < 3:
+                seen.add(key)
                 ex.append(x)
         f[rid] = {"count": len(evs), "detail": detail, "examples": ex if examples is None else examples,
                   "severity": sev or next(c[1] for c in CHECKS if c[0] == rid)}
-    l = by.get("email_out")
-    if l:
-        hs = sorted({h for x in l for h in x["hosts"]})
-        add("email_out", l, "%s put your email in requests to %s, most recently on %s.%s" % (n(len(l), "command"), n(max(1, len(hs)), "website"),
-            last(l), " Sites: " + ", ".join(hs[:8]) + (" and more." if len(hs) > 8 else ".") if hs else ""))
+    for rule in EMAIL_RULES:
+        events = by.get(rule, [])
+        if events:
+            counts = [0] * len(EMAIL_OUTCOMES)
+            for ev in events:
+                index = 0 if ev["detail"] == "script input" else {"failed": 2, "blocked": 3, "ran": 4}.get(ev["outcome"], 1)
+                counts[index] += 1
+            detail = evidence_text(counts) + ". These local records do not establish receipt by a website."
+            add(rule, events, detail)
+            f[rule]["evidence"] = counts
     keys, kex = {}, []
     for r in sorted(results, key=lambda r: r["end"], reverse=True):
         if r["keys"]:
@@ -1263,7 +1330,6 @@ def run(args):
         add("secrets_in_logs", [{}] * len(keys), "%s that %s in plain text in %s: %s." % (n(len(keys), "key"), "looks real is" if len(keys) == 1 else "look real are",
             n(len(kex), "log file"), ", ".join("%s ×%d" % (k, kinds.count(k)) for k in dict.fromkeys(kinds))), examples=kex[:5])
     summaries = {
-        "public_submit": lambda l: "%s your email went into a website form or request, most recently on %s." % (n(len(l), "time"), last(l)),
         "secret_files": lambda l: "%s touched SSH keys, .env files or your keychain." % n(len(l), "agent action"),
         "force_push": lambda l: "%s, most recently on %s." % (n(len(l), "force push", "force pushes"), last(l)),
         "no_verify": lambda l: "%s skipped or moved your git hooks." % n(len(l), "git command"),

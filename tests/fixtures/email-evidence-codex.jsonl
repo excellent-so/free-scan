@@ -1,0 +1,42 @@
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-missing","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-failed","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"request-failed","output":"Process exited with code 6\nFixture failure"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-blocked","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"request-blocked","output":"Command blocked by PreToolUse hook: fixture denial"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-reported_success","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"request-reported_success","output":"Process exited with code 0\nFixture completion"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-unrecognized_result","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"request-unrecognized_result","output":""}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-unmatched","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"request-different","output":"Process exited with code 0\nFixture completion"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"request-quoted_failure","arguments":"{\"cmd\": \"curl -s -A 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"request-quoted_failure","output":"Output:\nProcess exited with code 0"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-missing","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-failed","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"form-failed","output":"Process exited with code 6\nFixture failure"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-blocked","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"form-blocked","output":"Command blocked by PreToolUse hook: fixture denial"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-reported_success","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"form-reported_success","output":"Process exited with code 0\nFixture completion"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-unrecognized_result","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"form-unrecognized_result","output":""}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-unmatched","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"form-different","output":"Process exited with code 0\nFixture completion"}}
+{"type":"session_meta","timestamp":"2026-11-22T10:01:59Z","payload":{"cwd":"/synthetic/fixture"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"form-quoted_failure","arguments":"{\"cmd\": \"curl -s -d 'Fixture (synthetic-review@example.com)' https://sink.invalid/check\"}"}}
+{"type":"response_item","timestamp":"2026-11-22T10:02:01Z","payload":{"type":"function_call_output","call_id":"form-quoted_failure","output":"Output:\nProcess exited with code 0"}}

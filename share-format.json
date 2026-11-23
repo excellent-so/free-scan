@@ -2,6 +2,7 @@
   "format": "excellent-free-scan share link",
   "version": 1,
   "url": "https://excellent.so/r",
+  "optional_email_evidence": "Append &e= before &c= when email findings have outcome counts. The ten integers are five per check (email_out then public_submit): local script input, unknown result, tool-reported failure, blocked, tool-reported success. The five counts sum to that check total. Earlier links have no e and cannot establish individual outcomes. When present, e is covered by the checksum.",
   "link_template": "https://excellent.so/r?v=1&a=<a>&n=<n>&d=<d>&k=<k>&s=<s>&p=<p>&c=<c>&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=<x|linkedin|copy|video|image>",
   "params": {
     "v": "format version, always 1",
@@ -135,17 +136,17 @@
       "index": 0,
       "id": "email_out",
       "severity": "high",
-      "title": "Your email was sent to websites",
-      "label": "requests carried my email to websites",
-      "label_one": "request carried my email to a website"
+      "title": "Your email in request commands or scripts",
+      "label": "request or script inputs contained my email",
+      "label_one": "request or script input contained my email"
     },
     {
       "index": 1,
       "id": "public_submit",
       "severity": "medium",
-      "title": "Your email was typed into web forms",
-      "label": "times my email went into a web form",
-      "label_one": "time my email went into a web form"
+      "title": "Your email in form or request inputs",
+      "label": "form or request inputs contained my email",
+      "label_one": "form or request input contained my email"
     },
     {
       "index": 2,
