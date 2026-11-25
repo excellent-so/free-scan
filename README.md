@@ -40,8 +40,8 @@ python3 scan.py --email you@example.com   # also look for this address
 
 The same rules as the Excellent app, simplified:
 
-- your email sent to websites, for example as the contact in a User-Agent header;
-- your email typed into web forms;
+- your address in request commands or local script inputs, including a User-Agent header;
+- your address in form or request inputs;
 - API keys sitting in your agent logs (11 kinds, by their known shape);
 - agents opening keys and secrets files: `.env` files, SSH keys, your keychain;
 - force pushes;
@@ -75,7 +75,11 @@ The report masks emails and keys in its examples. It loads nothing from the netw
 share card for Save video and Save image, on your Mac. The share card at the top holds only counts, agent names and
 dates. The rest of the page is for you, and it names sites, projects and log files.
 
-Nothing leaves your Mac unless you click. The share buttons: Save video and Save image save the card as a file; Copy
+The report follows Excellent for Mac's look. It ranks what it found in three tiers: Fix now, Review and Good to know.
+Each finding says what happened, what you can do yourself, and what Excellent for Mac does about it, with a Download
+Excellent link.
+
+The report page loads locally. Its share buttons work as follows. Save video and Save image save the card as a file; Copy
 share link copies an excellent.so/r link that carries only the card's numbers and which agents ran; Post on X opens
 x.com with the card's lines and that link. The page also links to excellent.so/scan ("Run yours free") and to "Get
 Excellent for Mac". The excellent.so links carry `utm_` tags.
@@ -86,9 +90,7 @@ The script makes no network connections and sends nothing anywhere. It prints on
 names, dates, log size and where the report is, as a `~/` path. It never prints a key, an email, log text or your
 account name.
 
-Your agent sees that summary, and the output of the prompt's other steps: the extractor prints "saved" and the hash
-check prints the hash. That goes to your agent's provider as part of your normal conversation with it, as the prompt
-itself does, script included.
+When you use the prompt in an agent, the summary and the verification output appear in that conversation. A hosted agent can send those outputs and the prompt (including the script) to its provider. Running the script directly in Terminal prints the summary there.
 
 This is what the script printed in the tests' fake home:
 
@@ -97,8 +99,9 @@ Read 3 sessions (0.0 GB of logs) in 0 seconds. Your email: found (checked, not s
 Report: ~/excellent-free-scan/report.html
 
 Excellent free scan · Claude Code + Codex + Grok Build · Nov 10 – Nov 16 · 8 actions
-  Your email was sent to websites                1
-  Your email was typed into web forms            0
+5 to fix now · 2 to review · 1 good to know
+  Your email in request commands or scripts                1
+  Your email in form or request inputs            0
   API keys are sitting in your agent logs        2
   Agents opened keys and secrets files           1
   Agents force-pushed                            2
@@ -116,8 +119,8 @@ Run yours free: excellent.so/scan
 shasum -a 256 -c SHA256SUMS
 ```
 
-The SHA-256 of `scan.py` is `7a8e97a57072c406304bd13dcca9d8047ea30e7cfbd2685ebc3ffb5530d92d1b`. The prompt states the
-same value and has your agent check the saved script against it. excellent.so/#scan shows the same value. `SHA256SUMS`
+The SHA-256 of `scan.py` is `a90f663d2fcbb70dfa64464f84eb9d4a0d6570229e6b5f677f5210d4595b301a`. The prompt states the
+same value and has your agent check the saved script against it. excellent.so/scan shows the same value. `SHA256SUMS`
 also lists `PROMPT.md`: that is the hash of the whole file, not only the text you paste.
 
 ## How the prompt is built
@@ -168,3 +171,5 @@ for Macs with Apple silicon and macOS 14 or later, runs these checks too, and sc
 Help: help@excellent.so
 
 © 2026 Excellent Software, LLC
+
+The email checks report local script input, unknown result, tool-reported failure, block and tool-reported success. Agent logs alone cannot confirm receipt by a website. Run `python3 tests/email_evidence_test.py` for the synthetic Claude Code and Codex cases, including report, summary and share counts. The test parses inert records in an isolated home.

@@ -25,6 +25,7 @@ def build():
         "format": "excellent-free-scan share link",
         "version": 1,
         "url": "https://excellent.so/r",
+        "optional_email_evidence": "Append &e= before &c= when email findings have outcome counts. The ten integers are five per check (email_out then public_submit): local script input, unknown result, tool-reported failure, blocked, tool-reported success. The five counts sum to that check total. Earlier links have no e and cannot establish individual outcomes. When present, e is covered by the checksum.",
         "link_template": "https://excellent.so/r?v=1&a=<a>&n=<n>&d=<d>&k=<k>&s=<s>&p=<p>&c=<c>&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=<x|linkedin|copy|video|image>",
         "params": {
             "v": "format version, always 1",

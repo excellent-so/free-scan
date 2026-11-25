@@ -422,7 +422,7 @@ def classify(tool, inp, cwd):
         text = "\n".join([inp[k] for k in ("content", "new_string") if isinstance(inp.get(k), str)]
                          + [e["new_string"] for e in inp.get("edits") or [] if isinstance(e, dict) and isinstance(e.get("new_string"), str)])
         if tool != "Read" and text and (CODE_NET.search(text) or re.search(r"\b(curl|wget)\b", text)) and has_email(text) and email_in_header(text):
-            out.append(("email_out", text, None, foreign(hosts_in(text))))
+            out.append(("email_out", text, "script input", foreign(hosts_in(text))))
     if tool == "WebFetch" and isinstance(inp.get("url"), str) and has_email(inp["url"]) and foreign(hosts_in(inp["url"])[:1] or [""]):
         out.append(("email_out", inp["url"], None, hosts_in(inp["url"])))
     if EMAILS and any(k in tool.lower() for k in ("chrome", "browser", "playwright", "puppeteer", "computer")):
@@ -431,8 +431,8 @@ def classify(tool, inp, cwd):
                for e in EMAILS for m in re.finditer(re.escape(e), flat, re.I)):
             hs = foreign(hosts_in(flat))
             sent = re.search(r"submit|\"key\":\s*\"(Return|Enter)\"|\.requestSubmit|\.submit\(", flat, re.I)
-            out.append(("public_submit", "Browser agent typed your email " + ("on " + ", ".join(hs) if hs else "into a web page")
-                        + (" and submitted the form" if sent else ""), None, hs))
+            out.append(("public_submit", "Browser tool input containing your email" + (" for " + ", ".join(hs) if hs else "")
+                        + (" with a form submission instruction" if sent else ""), None, hs))
     return out
 
 
@@ -491,9 +491,33 @@ GROK_TOOLS = {"run_terminal_command": "Bash", "monitor": "Bash", "Shell": "Bash"
 ALIASES = {"command": ("cmd", "command_line"), "file_path": ("path", "target_file", "absolute_path", "filePath"),
            "content": ("contents", "file_text"), "new_string": ("newString", "new_str")}
 CWD_RX = re.compile(rb'"cwd":"((?:[^"\\]|\\.)*)"')
-BLOCKED = {"claude": re.compile(r"hook|blocked|denied|not allowed|refus|permission", re.I),
-           "codex": re.compile(r"rejected by (the )?user|sandbox (denied|blocked)|not permitted by policy|blocked by (?:\w+ )?hook", re.I),
+BLOCKED = {"claude": re.compile(r"^(?:error:\s*)?(?:command blocked|blocked by|rejected by (?:the )?user|permission requested|user (?:denied|rejected)|this (?:tool use|command) was (?:denied|blocked)|pretooluse:.*(?:block|denied))", re.I),
+           "codex": re.compile(r"(?:command )?blocked by (?:\w+ )?hook|rejected by (the )?user|sandbox (denied|blocked)|not permitted by policy|blocked by (?:\w+ )?hook", re.I),
            "grok": re.compile(r"denied by (a |the )?(pretooluse )?hook|blocked by (a |the )?(\w+ )?hook|permission (was )?denied|rejected by (the )?user", re.I)}
+
+
+EMAIL_RULES = ("email_out", "public_submit")
+EMAIL_OUTCOMES = ("local script input", "result unknown", "tool reported failure", "blocked", "tool reported success")
+
+
+def codex_outcome(output):
+    # Only the terminal wrapper can establish process completion. Its stdout may quote a different exit code.
+    if isinstance(output, str):
+        parsed = jstr(output)
+        if isinstance(parsed, dict):
+            output = parsed
+    if isinstance(output, dict):
+        code = (output.get("metadata") or {}).get("exit_code") if isinstance(output.get("metadata"), dict) else None
+        if type(code) is int:
+            return "ran" if code == 0 else "failed"
+        output = output.get("output")
+    if not isinstance(output, str):
+        return "unknown"
+    header = re.split(r"(?im)^(?:final output|output):", output, maxsplit=1)[0].strip()
+    if BLOCKED["codex"].match(header):
+        return "blocked"
+    m = re.search(r"(?im)^(?:process exited with code|exit code:) (-?\d+)\s*$", header)
+    return ("ran" if int(m[1]) == 0 else "failed") if m else "unknown"
 
 
 def jstr(t):
@@ -514,15 +538,17 @@ def scan_file(job):
     told, pend = {"n": 0, "first": {}}, {}
 
     def add(cid, found, ts):
-        evs = [{"rule": r, "ts": ts, "text": mask(t, 220), "detail": d, "hosts": (h or [])[:4], "outcome": "ran", "at": told["n"]}
+        evs = [{"rule": r, "ts": ts, "text": mask(t, 220), "detail": d, "hosts": (h or [])[:4], "outcome": "unknown" if r in EMAIL_RULES else "ran", "at": told["n"], "call": cid if isinstance(cid, str) else None}
                for r, t, d, h in found]
         res["events"] += evs
-        if cid is not None and evs:
+        if isinstance(cid, str) and cid and evs:
             pend[cid] = evs
 
-    def result(cid, text, failed=True):
-        for e in pend.pop(cid, []):
-            e["outcome"] = "blocked" if BLOCKED[agent].search(text) else "failed" if failed else "ran"
+    def result(cid, outcome):
+        events = pend.get(cid, []) if outcome == "unknown" else pend.pop(cid, [])
+        for e in events:
+            if outcome != "unknown" or e["rule"] in EMAIL_RULES:
+                e["outcome"] = outcome
     try:
         f = open(path, "rb")
     except OSError:
@@ -541,17 +567,21 @@ def scan_file(job):
                     m = not res["cwd"] and CWD_RX.search(line, 0, 4000)
                     if m:
                         res["cwd"] = json.loads(b'"' + m.group(1) + b'"')
-                    if b'"tool_use"' in line and b'"type":"assistant"' in line:
+                    if b'"tool_use"' in line:
                         o = json.loads(line)
                         for x in (o.get("message") or {}).get("content") or [] if o.get("type") == "assistant" else []:
                             if isinstance(x, dict) and x.get("type") == "tool_use":  # (api-request-blob records repeat calls)
                                 res["calls"] += 1
                                 add(x.get("id"), classify(x.get("name") or "", x.get("input") or {}, o.get("cwd") or res["cwd"]), o.get("timestamp") or "")
-                    elif pend and b'"is_error":true' in line and b'"tool_result"' in line:
-                        for x in (json.loads(line).get("message") or {}).get("content") or []:
+                    elif pend and b'"tool_result"' in line:
+                        o = json.loads(line)
+                        for x in ((o.get("message") or {}).get("content") or []) if o.get("type") == "user" else []:
                             if isinstance(x, dict) and x.get("type") == "tool_result" and x.get("tool_use_id") in pend:
                                 c = x.get("content")
-                                result(x["tool_use_id"], (c if isinstance(c, str) else " ".join(str(y.get("text", "")) for y in c or [] if isinstance(y, dict)))[:300])
+                                text = c if isinstance(c, str) else " ".join(str(y.get("text", "")) for y in c or [] if isinstance(y, dict))
+                                failed = x.get("is_error", False)
+                                outcome = ("blocked" if BLOCKED[agent].search(text) else "failed") if failed is True else "ran" if failed is False and (x.get("is_error") is False or text.strip()) else "unknown"
+                                result(x["tool_use_id"], outcome)
                 elif agent == "codex":
                     if line.startswith(b'{"timestamp":"'):
                         res["end"] = line[14:38].decode("ascii", "replace")
@@ -568,11 +598,9 @@ def scan_file(job):
                             cmds = [m.group(1) for m in re.finditer(r'cmd\s*:\s*"((?:[^"\\]|\\.)*)"', text)]  # exec: tools.exec_command({cmd:"…"})
                             for c in [jstr('"' + c + '"') for c in cmds] + ([jstr(text)] if p.get("name") in ("shell", "exec_command") else []):
                                 found += classify("Bash", c if isinstance(c, dict) else {"command": c}, res["cwd"]) if c else []
-                            add(cid, found, line[14:38].decode("ascii", "replace"))
-                        elif cid in pend:
-                            o = p.get("output")
-                            t = (o if isinstance(o, str) else json.dumps(o))[:3000]
-                            result(cid, t, bool(re.search(r"exit(?:ed)?(?: with)?(?: code)?[: ]+[1-9]\d*\b|process exited with code [1-9]", t, re.I)))
+                            add(cid, found, json.loads(line).get("timestamp") or "")
+                        elif pty in ("function_call_output", "custom_tool_call_output") and cid in pend:
+                            result(cid, codex_outcome(p.get("output")))
                 elif agent == "grok":
                     if line.startswith(b'{"type":"assistant"') and b'"tool_calls"' in line:
                         for c in json.loads(line).get("tool_calls") or []:
@@ -585,7 +613,11 @@ def scan_file(job):
                     elif pend and line.startswith(b'{"type":"tool_result"'):
                         m = re.search(rb'"tool_call_id"\s*:\s*"([^"]{1,200})"', line)
                         if m and m.group(1).decode() in pend:
-                            result(m.group(1).decode(), line[:4000].decode("utf-8", "replace"), False)
+                            record = json.loads(line)
+                            text = str(record.get("content", ""))
+                            status = record.get("status")
+                            outcome = "blocked" if BLOCKED[agent].search(text) else "failed" if status in ("failed", "error") else "ran" if status in ("completed", "success") else "unknown"
+                            result(m.group(1).decode(), outcome)
             except ValueError:  # a line that isn't whole JSON (a log still being written)
                 continue
     for e in res["events"]:
@@ -790,16 +822,16 @@ def broken_hooks():  # hooks whose program is gone fail silently on every action
 
 # ---------- the report ----------
 CHECKS = [  # id, severity, title, score-card label, why it matters, what you can do yourself
-    ("email_out", "high", "Your email was sent to websites", "requests carried my email to websites",
-     "Agents put your email address into requests to other sites, or into scripts that make them, most often as the contact in a User-Agent header. Sites that got those requests have it in their logs.",
+    ("email_out", "high", "Your email in request commands or scripts", "request or script inputs contained my email",
+     "Your address appeared in a request command or in code supplied to a file-writing tool.",
      "Ask your agents to use a project URL as the contact instead, and check your scripts for your address."),
-    ("public_submit", "medium", "Your email was typed into web forms", "times my email went into a web form",
-     "A browser agent or a command put your email into a web page, a form or a request body.", "Check each signup or form was one you meant."),
+    ("public_submit", "medium", "Your email in form or request inputs", "form or request inputs contained my email",
+     "A browser tool or a request command included your address in its input.", "Check each signup or form was one you meant."),
     ("secrets_in_logs", "high", "API keys are sitting in your agent logs", "API keys sitting in plain-text logs",
-     "Agent logs keep everything an agent saw, in plain text. Anything that can read your home folder (a backup, a sync tool, another agent) can read these keys.",
+     "The scan found values matching known key formats in plain-text agent logs. Anyone with access to those files can read the values.",
      "Make a new key at each provider and retire the old one. Then delete those log files or take the keys out."),
     ("secret_files", "low", "Agents opened keys and secrets files", "actions on .env, SSH or keychain secrets",
-     "Agents read, edited or ran commands on .env files, SSH keys or your keychain. Often that is part of the job, but what they read goes to the model provider and stays in the log.",
+     "A recorded tool call named a .env file, an SSH key or your keychain. Its input identifies the file or command. A matching key value in a transcript is a separate finding.",
      "Keep real keys out of the folders agents work in; give agents environment variables or a secrets manager."),
     ("force_push", "high", "Agents force-pushed", "force pushes",
      "Agents force-pushed, which replaces history on the server. On a shared branch that can erase other people's work.",
@@ -818,7 +850,7 @@ CHECKS = [  # id, severity, title, score-card label, why it matters, what you ca
      "Hooks in your agent settings point to a program that no longer exists, so they fail each time they run.",
      "Open the settings file and fix the path."),
 ]
-TILE_ONE = {"email_out": "request carried my email to a website", "public_submit": "time my email went into a web form",
+TILE_ONE = {"email_out": "request or script input contained my email", "public_submit": "form or request input contained my email",
             "secrets_in_logs": "API key sitting in a plain-text log", "secret_files": "action on .env, SSH or keychain secrets",
             "force_push": "force push", "no_verify": "git command that skipped or moved git hooks",
             "protected_delete": "delete of a folder I marked never-delete", "publish_deploy": "publish or deploy",
@@ -853,7 +885,7 @@ WORDS_D = ("M437.5 15.8L438.2 22.9L442.7 63.6L436 64.3C432.5 31.9 427 26.5 410.3
            "C1132.2 208.8 1122.5 197.7 1122.5 164.6V89.4H1105.9V80.6C1123.2 80.2 1134.1 67.4 1136.4 45.2H1145V79.7H1173.3V"
            "89.4H1145.4V158.5C1145.4 179.5 1147.6 193.5 1158.7 193.5C1169.3 193.5 1174.5 180.2 1174.5 152.1Z")
 DOWNLOAD = "https://www.excellent.so/download?utm_source=free-scan&utm_medium=report&utm_campaign=launch"
-APP = {  # where a check needs a look: what Excellent for Mac does about it (truth/FEATURE-TRUTH.md; CLAIMS.md rulings D, G, H)
+APP = {  # where a check fires: what Excellent for Mac does about it (truth/FEATURE-TRUTH.md; CLAIMS.md rulings D, G, H)
     "email_out": "With Pro, Excellent for Mac blocks agent commands that send your email to a website, before they run.",
     "public_submit": "With Pro, Excellent for Mac asks you first, or stops it, when an agent goes to put your email into a web form.",
     "secrets_in_logs": "Excellent for Mac can take these keys out of your agent logs, and opens each provider's key page so you can replace them.",
@@ -864,93 +896,122 @@ APP = {  # where a check needs a look: what Excellent for Mac does about it (tru
     "written_rules": "With Pro, Excellent for Mac checks each action against the never-delete, never-open and never-run rules you wrote, before it runs.",
     "broken_hooks": "Excellent for Mac flags these whenever you scan, and repairs hooks that broke because Node moved.",
 }
+TIER = {"high": ("Fix now", "to fix now"), "medium": ("Review", "to review"), "low": ("Good to know", "good to know")}
+FIX = {  # the head of each finding's call to action: fix what the scan found, or stop it next time (APP says how)
+    "secrets_in_logs": "Fix it with Excellent for Mac", "broken_hooks": "Fix it with Excellent for Mac",
+    "publish_deploy": "Keep watch with Excellent for Mac"}
+APP["publish_deploy"] = "Excellent for Mac shows every publish and deploy whenever you scan, with no account needed."
+
+
+def tiers(f):  # [(severity, checks that fired at it)], highest first, only the ones with any
+    return [(v, n) for v in ("high", "medium", "low") for n in [sum(1 for x in f.values() if x["severity"] == v)] if n]
+
+
+def tier_text(f):  # "2 to fix now · 1 to review · 3 good to know", or "All 10 checks clean"
+    return " \u00b7 ".join("%d %s" % (n, TIER[v][1]) for v, n in tiers(f)) or "All %d checks clean" % len(CHECKS)
+
+
 LOCKUP = ('<svg class="lockup" viewBox="0 0 1153 219" role="img" aria-label="Excellent"><path fill-rule="evenodd" d="%s"/>'
           '<path transform="translate(-28.3)" d="%s"/></svg>') % (MARK_D, WORDS_D)
 MARK = '<svg class="mark" viewBox="0 0 248 219" aria-hidden="true"><path fill-rule="evenodd" d="%s"/></svg>' % MARK_D
 ARROW = '<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9.5M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>'
-LIGHT = ("--paper:#fff;--paper2:#f1f4f6;--card:#fff;--ink:#0f1419;--ink2:#27313b;--quiet:#56616c;--faint:#7d8893;--rule:#d8dfe5;"
-         "--fill:#f1f4f6;--fill2:#e2e8ed;--accent:#1d6b74;--ok:#2e8c8c;--hi:#c42a18;--hi-bg:#ce2e1c14;--edge:#0e0e0e17;"
-         "--shadow:0 1px 2px #171b1f0f,0 12px 32px -12px #171b1f2e")
+LIGHT = ("--paper:#f1f1f2;--paper2:#ebebed;--card:#fff;--ink:#111316;--ink2:#2f3237;--quiet:#676d74;--faint:#a1a6ac;--rule:#0000000f;"
+         "--fill:#f5f5f6;--fill2:#0000000d;--accent:#3d7bd9;--ok:#2e9457;--hi:#c9301f;--hi-bg:#c9301f14;--md:#b26b0e;--md-bg:#d9a44124;"
+         "--edge:#00000013;--btn:#111316;--on-btn:#fff;--shadow:0 1px 2px #0000000a,0 8px 24px -12px #0000001f")
+# The Mac app's look (excellent-watch Theme.swift; the site's home demo): a light grey or graphite canvas, panels with a
+# hairline edge and 12 px corners, Inter for the interface, a display serif for page titles, pill buttons, and severity
+# drawn as the app draws it (octagon, triangle, info) in red, amber and grey.
 CSS = """:root{color-scheme:light dark;""" + LIGHT + """;
---field:radial-gradient(90% 120% at 0% 0%,#9fc3c88c,#0000 55%),radial-gradient(80% 100% at 100% 100%,#5f8a91b3,#0000 65%),linear-gradient(150deg,#3b5b66,#24363f 55%,#1e2a33);
---serif:"PP Editorial New",Fraunces,ui-serif,Baskerville,"Iowan Old Style",Georgia,serif;--sans:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+--serif:Fraunces,"New York",ui-serif,"Iowan Old Style",Georgia,serif;--sans:Inter,-apple-system,BlinkMacSystemFont,system-ui,"Helvetica Neue",Arial,sans-serif;
 --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Monaco,monospace}
-@media screen and (prefers-color-scheme:dark){:root{--paper:#12181d;--paper2:#161d23;--card:#1a2229;--ink:#f2f6f8;--ink2:#d2dae0;--quiet:#97a4af;
---faint:#6f7b86;--rule:#2b3640;--fill:#222c34;--fill2:#2b3640;--accent:#6cc3c3;--ok:#5bb5b2;--hi:#ff8c7a;--hi-bg:#ff8c7a1a;--edge:#ffffff14;
---shadow:0 1px 2px #0000004d,0 16px 40px -16px #0009;
---field:radial-gradient(90% 120% at 0% 0%,#7fa9ae4d,#0000 55%),radial-gradient(80% 100% at 100% 100%,#3b5b66b3,#0000 65%),linear-gradient(150deg,#2f4a52,#1c2a33 55%,#161f27)}}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+@media screen and (prefers-color-scheme:dark){:root{--paper:#1b1c1f;--paper2:#161719;--card:#232428;--ink:#ececee;--ink2:#c9cace;--quiet:#9b9ca2;
+--faint:#75767c;--rule:#ffffff12;--fill:#2a2b2f;--fill2:#ffffff14;--accent:#5ea0ff;--ok:#3f9f62;--hi:#ef5b4f;--hi-bg:#ef5b4f1f;--md:#d9a441;--md-bg:#d9a4411f;
+--edge:#ffffff13;--btn:#f4f4f5;--on-btn:#151517;--shadow:0 1px 2px #0000004d,0 16px 40px -20px #000000b3}}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.55 var(--sans);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
 h1,h2,h3,p,ul,dl,dd{margin:0}ul{padding:0;list-style:none}svg{display:block;fill:currentColor}
-a{color:inherit;text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:4px}a:hover{text-decoration-color:currentColor}
-:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
-code{font:12.5px/1.55 var(--mono);color:var(--ink2);word-break:break-all}
-.wrap{max-width:944px;margin:0 auto;padding:0 clamp(16px,5vw - 8px,40px)}
-.top{border-bottom:1px dashed var(--rule)}.top .wrap,footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px 24px;flex-wrap:wrap}
-.top .wrap{min-height:64px}.lockup{flex:none;height:20px;width:auto;aspect-ratio:1153/219}.nw{white-space:nowrap}
-.label{font:500 11px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--quiet)}
-.hero{padding:clamp(40px,7vw,80px) 0 clamp(28px,4vw,40px)}
-h1{font:400 clamp(38px,6vw,60px)/1.06 var(--serif);letter-spacing:-.02em;text-wrap:balance}
-.lede{margin-top:18px;max-width:38em;font-size:17px;line-height:1.6;color:var(--quiet);text-wrap:pretty}
-.score{border-radius:12px;padding:clamp(10px,2.6vw,28px);background:var(--field);box-shadow:inset 0 0 0 1px #ffffff1a,0 24px 60px -36px #171b1f8c}
-.score-in{display:flex;flex-direction:column;gap:20px;padding:clamp(20px,3.6vw,36px);border-radius:8px;background:var(--card);box-shadow:var(--shadow)}
-.score .lockup{align-self:flex-start;height:18px}.score h2{font:400 clamp(24px,3.4vw,34px)/1.16 var(--serif);letter-spacing:-.015em;text-wrap:balance}.sub{display:block;color:var(--faint)}.sep{display:none}
-.need{margin-top:-4px;font-size:15px;color:var(--quiet)}.need b{color:var(--ink);font-weight:600}
-.need i{display:inline-block;width:8px;height:8px;margin-right:10px;border-radius:50%;background:var(--hi);vertical-align:1px}.need.ok i{background:var(--ok)}
+a{color:inherit;text-decoration:underline;text-decoration-color:var(--fill2);text-underline-offset:3px}a:hover{text-decoration-color:currentColor}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+code{font:12px/1.55 var(--mono);color:var(--ink2);word-break:break-all}
+.wrap{max-width:920px;margin:0 auto;padding:0 clamp(16px,4vw,32px)}
+.top{position:sticky;top:0;z-index:2;background:color-mix(in srgb,var(--paper) 86%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--rule)}
+.top .wrap,footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px 24px;flex-wrap:wrap}
+.top .wrap{min-height:52px}.lockup{flex:none;height:18px;width:auto;aspect-ratio:1153/219}.nw{white-space:nowrap}
+.label{font:600 11px/1.3 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--quiet)}
+.hero{padding:clamp(32px,6vw,56px) 0 22px}
+h1{font:600 clamp(30px,4.6vw,40px)/1.1 var(--serif);letter-spacing:-.015em;text-wrap:balance}
+.lede{margin-top:10px;max-width:42em;font-size:15px;line-height:1.6;color:var(--quiet);text-wrap:pretty}
+.si{display:inline-block;flex:none;width:16px;height:16px;vertical-align:-3px}.si .g{fill:var(--card)}.si.high{color:var(--hi)}.si.medium{color:var(--md)}.si.low{color:var(--faint)}.si.ok{color:var(--ok)}
+.score{margin:0}
+.score-in{display:flex;flex-direction:column;gap:18px;padding:clamp(18px,3vw,26px);border:1px solid var(--edge);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+.score .lockup{align-self:flex-start;height:16px}.score h2{font:600 clamp(20px,2.8vw,26px)/1.2 var(--serif);letter-spacing:-.01em;text-wrap:balance}.sub{display:block;margin-top:2px;font:400 14px/1.5 var(--sans);color:var(--quiet)}.sep{display:none}
+.need{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13.5px;color:var(--quiet)}.need span{display:inline-flex;align-items:center;gap:7px}.need b{color:var(--ink);font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-.tile{padding:14px 14px 16px;border-radius:6px;background:var(--fill);font-size:13px;line-height:1.35;color:var(--quiet)}
-.tile b{display:block;margin-bottom:10px;font:400 36px/1 var(--serif);letter-spacing:-.02em;color:var(--ink);font-variant-numeric:lining-nums tabular-nums}
-.tile.ok b{color:var(--ok)}
-.foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 24px;padding-top:18px;border-top:1px solid var(--fill2);font-size:13px;color:var(--quiet)}
-.foot small{font-size:inherit}.foot a,.btn,.btn2{display:inline-flex;align-items:center;gap:8px;text-decoration:none;white-space:nowrap}.foot a{font-weight:500;color:var(--ink)}.arrow{width:15px;height:15px}
-.share{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-top:18px;font-size:13px;line-height:1.5;color:var(--quiet)}.share span{flex:1;min-width:18em}
-.btn2{height:38px;padding:0 16px;border:1px solid var(--rule);border-radius:99px;font:500 13px/1 var(--sans);color:var(--ink)}.btn2:hover{border-color:var(--ink2)}
+.tile{position:relative;display:flex;flex-direction:column;padding:12px 14px 13px;border:1px solid var(--edge);border-radius:10px;background:var(--fill);font-size:12.5px;line-height:1.35;color:var(--quiet)}
+.tile b{display:block;margin-bottom:6px;font:600 26px/1.1 var(--sans);letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.tile .si{position:absolute;top:13px;right:12px}.tile.ok b{color:var(--quiet)}
+.tile em{display:block;margin-top:auto;padding-top:8px;font:600 10.5px/1.2 var(--sans);font-style:normal;letter-spacing:.05em;text-transform:uppercase}.tile.high em{color:var(--hi)}.tile.medium em{color:var(--md)}.tile.low em{color:var(--quiet)}
+.foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 24px;padding-top:14px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--quiet)}
+.foot small{font-size:inherit}.foot a,.btn,.btn2{display:inline-flex;align-items:center;gap:7px;text-decoration:none;white-space:nowrap}.foot a{font-weight:600;color:var(--ink)}.arrow{width:14px;height:14px}
+.share{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:14px;font-size:12.5px;line-height:1.5;color:var(--quiet)}.share span{flex:1;min-width:18em}
+.btn2{height:30px;padding:0 13px;border-radius:99px;background:var(--fill);box-shadow:inset 0 0 0 1px var(--edge);font:600 12.5px/1 var(--sans);color:var(--ink)}.btn2:hover{background:var(--fill2)}
 [hidden]{display:none!important}
-.tools{margin-top:14px;padding:18px 20px;border:1px solid var(--rule);border-radius:10px}.tools .row{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
-button.btn2{background:none;cursor:pointer}button.btn2:disabled{opacity:.6;cursor:progress}.hint{margin-top:8px;font-size:13px;line-height:1.5;color:var(--quiet)}
-#lnk{display:block;margin-top:10px;font-size:11.5px;color:var(--quiet)}#vid{display:block;width:100%;max-width:640px;margin-top:14px;border-radius:6px}
-.sec{padding-top:clamp(56px,8vw,88px)}.head{margin-bottom:28px}
-.sec h2,.cta h2{margin-top:12px;font:400 clamp(30px,4vw,42px)/1.12 var(--serif);letter-spacing:-.02em;text-wrap:balance}
-.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;box-shadow:inset 0 0 0 1px currentColor;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.tools{margin-top:12px;padding:16px 18px;border:1px solid var(--edge);border-radius:12px;background:var(--card)}.tools .row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+button.btn2{border:0;cursor:pointer}button.btn2:disabled{opacity:.6;cursor:progress}.hint{margin-top:6px;font-size:12.5px;line-height:1.5;color:var(--quiet)}
+#lnk{display:block;margin-top:8px;font-size:11px;color:var(--quiet)}#vid{display:block;width:100%;max-width:640px;margin-top:12px;border-radius:8px}
+.sec{padding-top:clamp(40px,6vw,64px)}.head{margin-bottom:18px}
+.sec h2,.cta h2{margin-top:6px;font:600 clamp(24px,3.4vw,30px)/1.15 var(--serif);letter-spacing:-.012em;text-wrap:balance}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;box-shadow:inset 0 0 0 1px var(--edge);font:600 10.5px/1 var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--quiet)}
 .label .pill{margin-left:8px;vertical-align:1px}
-.find{margin:12px 0;border:1px solid var(--edge);border-radius:8px;background:var(--card);box-shadow:var(--shadow)}
-.find summary{display:grid;grid-template-columns:1fr auto;grid-template-areas:"s n" "t n";gap:10px 20px;align-items:center;padding:22px 26px;cursor:pointer;list-style:none}
-.find summary::-webkit-details-marker{display:none}.find h3{grid-area:t;font:500 19px/1.35 var(--sans);letter-spacing:-.01em}
-.n{grid-area:n;font:400 40px/1 var(--serif);letter-spacing:-.02em;font-variant-numeric:lining-nums tabular-nums}
-.sev{grid-area:s;justify-self:start;display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px;border-radius:4px;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
-.sev i{width:6px;height:6px;border-radius:50%;background:currentColor}.high .sev{color:var(--hi);background:var(--hi-bg)}
-.medium .sev{color:var(--ink2);box-shadow:inset 0 0 0 1px var(--rule)}.low .sev{color:var(--quiet);background:var(--fill)}.low .sev i{background:none;box-shadow:inset 0 0 0 1px currentColor}
-.fb{display:grid;gap:20px;padding:0 26px 26px}.what{padding-top:20px;border-top:1px solid var(--fill2);color:var(--ink2)}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px 36px}.pair dt{margin-bottom:6px}.pair dd{font-size:15px;line-height:1.6;color:var(--quiet)}
-.app{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-radius:6px;background:var(--fill);font-size:14px;line-height:1.5;color:var(--ink2)}
-.mark{flex:none;width:17px;height:15px;margin-top:2px}.exs .label{margin-bottom:8px}
-.ex{display:grid;gap:6px}.ex li{padding:10px 12px;border:1px solid var(--fill2);border-radius:6px}.ex small{display:block;margin-top:4px;font-size:12px;color:var(--quiet)}
-.cleanbox{margin-top:36px}.cleanbox .label{margin-bottom:10px}.clean{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:0 36px}
-.clean li{display:flex;align-items:center;gap:14px;padding:13px 0;border-top:1px solid var(--rule);font-size:15px;color:var(--ink2)}
-.clean li:before{content:"";flex:none;width:10px;height:5px;margin:-4px 2px 0;border:solid var(--ok);border-width:0 0 2px 2px;transform:rotate(-45deg)}
-.cta{margin-top:clamp(64px,9vw,104px);padding:clamp(28px,5.4vw,56px);
-border-radius:12px;background:var(--field);color:#f2f6f8;box-shadow:inset 0 0 0 1px #ffffff1a}
-.cta .lede{max-width:34em}.go{display:flex;flex-wrap:wrap;align-items:center;gap:14px 24px;margin-top:30px}.go .fine{margin:0;max-width:24em}.cta .label{display:flex;align-items:center;gap:10px;color:#c7d3dc}.cta .mark{margin:0}.cta .lede{color:#c3ced6}
-.btn{min-height:48px;padding:0 24px;border-radius:99px;background:#f2f6f8;color:#12181d;font:500 15px/1 var(--sans)}.btn:hover{background:#fff}
-.fine{margin-top:14px;font-size:13px;line-height:1.5;color:#aebbc5}.tiers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:clamp(32px,4vw,44px)}
-.tiers li{padding:20px 22px;border:1px solid #ffffff21;border-radius:8px;background:#0f191f59}
-.tiers b{display:block;margin:12px 0 6px;font:400 23px/1.2 var(--serif);color:#fff}.tiers p{font-size:14px;line-height:1.55;color:#c3ced6}.tiers p+p{margin-top:8px;color:#aebbc5}.tiers .req{grid-column:1/-1;padding:4px 2px 0;border:0;background:none}.tiers .req p{font-size:13px;color:#aebbc5}
-.pill.solid{background:#f2f6f8;color:#12181d;box-shadow:none}
-.method{display:grid;grid-template-columns:1fr 1fr;gap:28px 44px}.method h3{margin-bottom:6px;font:500 15px/1.4 var(--sans)}.method p{font-size:14px;line-height:1.65;color:var(--quiet)}
-footer{margin-top:clamp(64px,9vw,104px);border-top:1px dashed var(--rule)}footer .wrap{padding-top:24px;padding-bottom:44px;font-size:13px;color:var(--quiet)}footer .lockup{height:16px}
+.tgroup{display:flex;align-items:baseline;gap:6px;margin:28px 0 8px;font-size:14px}.tgroup:first-child{margin-top:4px}.tgroup h3{font:600 14px/1.3 var(--sans);color:var(--ink)}.tgroup .c{color:var(--quiet)}.tgroup p{margin-left:auto;font-size:12.5px;color:var(--quiet)}
+.find{margin:0 0 10px;border:1px solid var(--edge);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+.find summary{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"i t n" "i s n";gap:4px 12px;align-items:center;padding:16px 18px;cursor:pointer;list-style:none}
+.find summary::-webkit-details-marker{display:none}.find summary>.si{grid-area:i;align-self:start;width:20px;height:20px;margin-top:1px}
+.find h3{grid-area:t;font:600 15px/1.35 var(--sans);letter-spacing:-.005em}
+.n{grid-area:n;font:600 22px/1 var(--sans);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.sev{grid-area:s;justify-self:start;display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:6px;font:600 10.5px/1 var(--sans);letter-spacing:.05em;text-transform:uppercase;box-shadow:inset 0 0 0 1px var(--edge);color:var(--quiet)}
+.sev i{display:none}.high .sev{color:var(--hi);background:var(--hi-bg);box-shadow:none}.medium .sev{color:var(--md);background:var(--md-bg);box-shadow:none}
+.fb{display:grid;gap:14px;padding:0 18px 18px 50px}.what{padding-top:14px;border-top:1px solid var(--rule);color:var(--ink2)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px 28px}.pair dt{margin-bottom:4px}.pair dd{font-size:13.5px;line-height:1.55;color:var(--quiet)}
+.mark{flex:none;width:16px;height:14px;margin-top:2px}
+.fix{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 20px;padding:14px 16px;border:1px solid var(--edge);border-radius:10px;background:var(--fill)}
+.fix .ft{display:flex;gap:11px;align-items:flex-start;flex:1;min-width:16em}.fix b{display:block;font:600 13.5px/1.4 var(--sans)}.fix span{display:block;margin-top:1px;font-size:13px;line-height:1.5;color:var(--quiet)}
+.btn{min-height:32px;padding:0 15px;border-radius:99px;background:var(--btn);color:var(--on-btn);font:600 13px/1 var(--sans)}.btn:hover{opacity:.88}
+.exs .label{margin-bottom:6px}
+.ex{display:grid;gap:6px}.ex li{padding:9px 11px;border-radius:8px;background:var(--fill)}.ex small{display:block;margin-top:3px;font-size:11.5px;color:var(--quiet)}
+.cleanbox{margin-top:22px}.cleanbox .label{margin-bottom:8px}.clean{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));overflow:hidden;border:1px solid var(--edge);border-radius:12px;background:var(--card)}
+.clean li{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 14px;border-bottom:1px solid var(--rule);font-size:13.5px;color:var(--ink2)}
+.clean li:before{content:"";flex:none;width:9px;height:5px;margin:-3px 3px 0;border:solid var(--ok);border-width:0 0 1.8px 1.8px;transform:rotate(-45deg)}
+.clean.na li:before{border:0;width:9px;height:1.8px;margin:0 3px;background:var(--faint);transform:none}
+.cta{margin-top:clamp(48px,7vw,72px);padding:clamp(22px,4vw,36px);border-radius:14px;background:#1b1c1f;color:#ececee;
+box-shadow:0 0 0 1px #ffffff17,0 1px 0 #ffffff0f inset,0 30px 80px -30px #00000099}
+.cta .lede{max-width:36em;color:#9b9ca2}.go{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-top:22px}.go .fine{margin:0;max-width:26em}.cta .label{display:flex;align-items:center;gap:9px;color:#9b9ca2}.cta .mark{margin:0;color:#f2f2f3}
+.cta .btn{min-height:38px;padding:0 18px;background:#f4f4f5;color:#151517;font-size:14px}
+.fine{margin-top:12px;font-size:12.5px;line-height:1.5;color:#9b9ca2}.tiers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:28px}
+.tiers li{padding:16px 18px;border:1px solid #ffffff13;border-radius:12px;background:#232428}
+.tiers b{display:block;margin:10px 0 4px;font:600 15px/1.3 var(--sans);color:#f4f4f5}.tiers p{font-size:13px;line-height:1.55;color:#9b9ca2}.tiers p+p{margin-top:6px}.tiers .req{grid-column:1/-1;padding:2px 2px 0;border:0;background:none}.tiers .req p{font-size:12.5px}
+.cta .pill{color:#c9cace;box-shadow:inset 0 0 0 1px #ffffff24}.pill.solid{background:#f4f4f5;color:#151517;box-shadow:none}
+.method{display:grid;grid-template-columns:1fr 1fr;gap:12px}.method>div{padding:16px 18px;border:1px solid var(--edge);border-radius:12px;background:var(--card)}.method h3{margin-bottom:4px;font:600 13.5px/1.4 var(--sans)}.method p{font-size:13px;line-height:1.6;color:var(--quiet)}
+footer{margin-top:clamp(48px,7vw,72px);border-top:1px solid var(--rule)}footer .wrap{padding-top:20px;padding-bottom:36px;font-size:12.5px;color:var(--quiet)}footer .lockup{height:15px}
 .back{display:none}body:has(#card:target) :is(.top,footer),body:has(#card:target) main>:not(#card):not(.back){display:none}
 body:has(#card:target) main{max-width:1264px;padding:24px 32px}body:has(#card:target) .back{display:inline-block;margin-bottom:12px;font-size:13px;color:var(--quiet)}
-#card:target{display:flex;width:1200px;max-width:100%;aspect-ratio:16/9;padding:32px}#card:target .score-in{flex:1;justify-content:space-between;gap:0;padding:36px 44px 30px}
-#card:target .lockup{height:22px}#card:target h2{font-size:38px;line-height:1.14}#card:target .need{margin:0;font-size:18px}#card:target .grid{gap:10px}
-#card:target .tile{padding:16px 18px 18px;font-size:14.5px}#card:target .tile b{font-size:46px;margin-bottom:10px}#card:target .foot{padding-top:16px;font-size:15px}
+#card:target{display:flex;width:1200px;max-width:100%;aspect-ratio:16/9;padding:32px;border-radius:16px;background:var(--paper2)}#card:target .score-in{flex:1;justify-content:space-between;gap:0;padding:36px 44px 30px}
+#card:target .lockup{height:22px}#card:target h2{font-size:36px;line-height:1.14}#card:target .need{margin:0;font-size:18px}#card:target .grid{gap:10px}
+#card:target .tile{padding:16px 18px 18px;font-size:14.5px}#card:target .tile b{font-size:40px;margin-bottom:10px}#card:target .foot{padding-top:16px;font-size:15px}
 @media (max-width:900px){#card:target{aspect-ratio:auto;padding:12px}#card:target .score-in{padding:24px}#card:target h2{font-size:28px}
-#card:target .grid{grid-template-columns:1fr 1fr}#card:target .tile b{font-size:36px}}
+#card:target .grid{grid-template-columns:1fr 1fr}#card:target .tile b{font-size:32px}}
 @media (max-width:860px){.grid{grid-template-columns:1fr 1fr}}
-@media (max-width:700px){.pair,.method,.tiers{grid-template-columns:1fr}.tile b{font-size:32px}
-.find summary{padding:18px 18px}.fb{padding:0 18px 18px}.n{font-size:32px}.top .label{display:none}}
-@media print{:root{""" + LIGHT + """}body{font-size:13px}.share,.back,.tools{display:none}.score,.cta{padding:0;background:none;box-shadow:none}
-.score-in,.tile,.find,.tiers li{border:1px solid var(--rule);box-shadow:none}.grid{grid-template-columns:repeat(5,minmax(0,1fr))}.score,.cta,.method>div,.ex li,.find summary,.pair,.app{break-inside:avoid}.find summary,.head{break-after:avoid}.need i,.sev,.sev i,.tile.ok b{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.cta{color:var(--ink);gap:24px}.cta :is(.label,.lede,.fine,.tiers p){color:var(--quiet)}.tiers b{color:var(--ink)}.tiers li{background:none}
-.btn{margin-top:20px;border:1px solid var(--ink);background:none;color:var(--ink)}.btn:after{content:": excellent.so/download"}.pill.solid{border:1px solid var(--ink)}}"""
+@media (max-width:700px){.pair,.method,.tiers{grid-template-columns:1fr}.fb{padding:0 16px 16px}.find summary{padding:14px 16px}.top .label{display:none}.tgroup p{display:none}}
+@media print{:root{""" + LIGHT + """}body{font-size:12px;background:#fff}.top{position:static}.share,.back,.tools{display:none}.find,.score-in,.method>div{box-shadow:none}
+.grid{grid-template-columns:repeat(5,minmax(0,1fr))}.score,.cta,.method>div,.ex li,.find summary,.pair,.fix{break-inside:avoid}.find summary,.head{break-after:avoid}.si,.sev,.tile em{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cta{background:none;color:var(--ink);box-shadow:none;border:1px solid var(--edge)}.cta :is(.label,.lede,.fine,.tiers p){color:var(--quiet)}.tiers b{color:var(--ink)}.tiers li{background:none;border-color:var(--edge)}
+.btn{border:1px solid var(--ink);background:none;color:var(--ink)}.btn:after{content:": excellent.so/download"}.pill.solid{border:1px solid var(--ink)}}"""
+# the app's severity marks (Shared.swift Severity.symbol: exclamationmark.octagon.fill, .triangle.fill, info.circle.fill)
+ICON = {
+    "high": '<svg class="si high" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.3 1h5.4L15 5.3v5.4L10.7 15H5.3L1 10.7V5.3z"/><path class="g" d="M7.2 4h1.6l-.25 5.2h-1.1zM8 10.4a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z"/></svg>',
+    "medium": '<svg class="si medium" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2c.4 0 .77.2.97.56l6.2 10.9c.42.75-.12 1.64-.97 1.64H1.8c-.85 0-1.39-.9-.97-1.64l6.2-10.9c.2-.36.57-.56.97-.56z"/><path class="g" d="M7.25 5h1.5l-.23 4.6H7.48zM8 10.6a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8z"/></svg>',
+    "low": '<svg class="si low" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path class="g" d="M7.3 7h1.4v4.8H7.3zM8 4a.9.9 0 1 1 0 1.8A.9.9 0 0 1 8 4z"/></svg>',
+    "ok": '<svg class="si ok" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path class="g" d="M6.9 10.9 4.3 8.3l1-1 1.6 1.6 3.8-3.8 1 1z"/></svg>',
+}
 
 
 def fmt(n):
@@ -990,10 +1051,10 @@ SCRIPT_JS = r'''(function () {
 var D = JSON.parse(document.getElementById("card-data").textContent);
 var $ = function (i) { return document.getElementById(i); };
 var dark = matchMedia("(prefers-color-scheme: dark)").matches;
-var P = dark ? {card: "#1a2229", ink: "#f2f6f8", ink2: "#d2dae0", quiet: "#97a4af", faint: "#6f7b86", rule: "#2b3640", fill: "#222c34", ok: "#5bb5b2", hi: "#ff8c7a"}
-  : {card: "#ffffff", ink: "#0f1419", ink2: "#27313b", quiet: "#56616c", faint: "#7d8893", rule: "#d8dfe5", fill: "#f1f4f6", ok: "#2e8c8c", hi: "#c42a18"};
-var SEV = {high: P.hi, medium: P.ink2, low: P.faint, ok: P.ok};
-var SERIF = 'ui-serif, Baskerville, "Iowan Old Style", Georgia, serif';
+var P = dark ? {card: "#232428", ink: "#ececee", ink2: "#c9cace", quiet: "#9b9ca2", faint: "#75767c", rule: "#323337", fill: "#2a2b2f", ok: "#3f9f62", hi: "#ef5b4f", md: "#d9a441"}
+  : {card: "#ffffff", ink: "#111316", ink2: "#2f3237", quiet: "#676d74", faint: "#a1a6ac", rule: "#e6e6e8", fill: "#f5f5f6", ok: "#2e9457", hi: "#c9301f", md: "#b26b0e"};
+var SEV = {high: P.hi, medium: P.md, low: P.faint, ok: P.ok};
+var SERIF = 'Fraunces, "New York", ui-serif, Georgia, serif';
 var SANS = 'Inter, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
 var lk = document.querySelectorAll(".score .lockup path");
 var MARK = new Path2D(lk[0].getAttribute("d")), WORDS = new Path2D(lk[1].getAttribute("d"));
@@ -1015,30 +1076,33 @@ function wrap(c, text, w) {
 function draw(c, W, t) {
   var s = W / 1200, i, a = function (t0, d) { return clamp((t - t0) / d); };
   c.setTransform(s, 0, 0, s, 0, 0); c.globalAlpha = 1; c.textBaseline = "alphabetic";
-  var g = c.createLinearGradient(0, 0, 1200, 675); g.addColorStop(0, dark ? "#2f4a52" : "#3b5b66"); g.addColorStop(0.55, dark ? "#1c2a33" : "#24363f"); g.addColorStop(1, dark ? "#161f27" : "#1e2a33");
-  c.fillStyle = g; c.fillRect(0, 0, 1200, 675);
-  var r1 = c.createRadialGradient(0, 0, 0, 0, 0, 1000); r1.addColorStop(0, "rgba(159,195,200,.5)"); r1.addColorStop(0.55, "rgba(159,195,200,0)");
-  c.fillStyle = r1; c.fillRect(0, 0, 1200, 675);
-  var r2 = c.createRadialGradient(1200, 675, 0, 1200, 675, 800); r2.addColorStop(0, "rgba(95,138,145,.7)"); r2.addColorStop(0.65, "rgba(95,138,145,0)");
-  c.fillStyle = r2; c.fillRect(0, 0, 1200, 675);
-  rr(c, 32, 32, 1136, 611, 10); c.fillStyle = P.card; c.fill();
+  c.fillStyle = dark ? "#1b1c1f" : "#ebebed"; c.fillRect(0, 0, 1200, 675);  // the app's canvas
+  rr(c, 32, 32, 1136, 611, 14); c.fillStyle = P.card; c.fill(); c.strokeStyle = P.rule; c.lineWidth = 1; c.stroke();
   c.save(); c.translate(76, 68); c.scale(22 / 219, 22 / 219); c.fillStyle = P.ink; c.fill(MARK, "evenodd"); c.translate(-28.3, 0); c.fill(WORDS); c.restore();
-  c.globalAlpha = a(0.1, 0.5); c.fillStyle = P.ink; c.font = "400 38px " + SERIF; c.fillText(D.title + " check-up", 76, 150);
+  c.globalAlpha = a(0.1, 0.5); c.fillStyle = P.ink; c.font = "600 36px " + SERIF; c.fillText(D.title + " check-up", 76, 150);
   c.globalAlpha = a(0.5, 0.5); c.fillStyle = P.faint; c.font = "400 20px " + SANS;
-  c.fillText(tick(D.sub, Math.round(D.actions * ease(a(0.6, 1.8)))), 76, 184);
-  var shown = 0, firing = 0;
-  D.tiles.forEach(function (x, k) { if (x.sev !== "ok") { firing++; if (t >= T0 + k * STEP) shown++; } });
-  c.globalAlpha = a(1, 0.4); c.beginPath(); c.arc(80, 227, 4, 0, 7); c.fillStyle = D.ok ? P.ok : P.hi; c.fill();
-  c.font = "600 20px " + SANS; c.fillStyle = P.ink; var b = D.need_b.charAt(0) >= "0" && D.need_b.charAt(0) <= "9" ? tick(D.need_b, shown) : D.need_b;
-  c.fillText(b, 96, 233); c.font = "400 20px " + SANS; c.fillStyle = P.quiet; c.fillText(" " + D.need_r, 96 + c.measureText(b).width + 6, 233);
+  c.fillText(tick(D.sub, Math.round(D.actions * ease(a(0.6, 1.8)))), 76, D.evidence ? 168 : 184);
+  c.globalAlpha = a(1, 0.4);
+  var tx = 76;
+  D.tiers.forEach(function (x) {  // "2 to fix now  1 to review  3 good to know", each with its severity's dot
+    c.beginPath(); c.arc(tx + 4, 227, 4, 0, 7);
+    if (x.sev === "low") { c.strokeStyle = SEV.low; c.lineWidth = 1.5; c.stroke(); } else { c.fillStyle = SEV[x.sev]; c.fill(); }
+    c.font = "600 20px " + SANS; c.fillStyle = P.ink; var b = num(x.n); c.fillText(b, tx + 20, 233);
+    var bw = c.measureText(b).width; c.font = "400 20px " + SANS; c.fillStyle = P.quiet; c.fillText(" " + x.label, tx + 20 + bw, 233);
+    tx += 20 + bw + c.measureText(" " + x.label).width + 28;
+  });
+  var evidence = D.evidence || [];
+  c.font = "400 15px " + SANS; c.fillStyle = P.quiet;
+  evidence.forEach(function (line, j) { c.fillText(line, 76, 189 + j * 18, 1048); });
   var tw = (1048 - 40) / 5;
   D.tiles.forEach(function (x, k) {
     var gx = 76 + (k % 5) * (tw + 10), gy = 256 + Math.floor(k / 5) * 160, st = T0 + k * STEP, f = a(st, 0.3);
     c.globalAlpha = a(0.9, 0.5) * (1 - f); rr(c, gx + 0.5, gy + 0.5, tw - 1, 149, 6); c.strokeStyle = P.rule; c.lineWidth = 1; c.stroke();
     c.globalAlpha = f; rr(c, gx, gy, tw, 150, 6); c.fillStyle = P.fill; c.fill();
-    if (x.sev !== "ok") { c.save(); rr(c, gx, gy, tw, 150, 6); c.clip(); c.fillStyle = SEV[x.sev]; c.fillRect(gx, gy, tw, 3); c.restore(); }
-    c.fillStyle = x.sev === "ok" ? P.ok : P.ink; c.font = "400 46px " + SERIF;
+    c.save(); rr(c, gx + 0.5, gy + 0.5, tw - 1, 149, 8); c.strokeStyle = P.rule; c.globalAlpha = f; c.stroke(); c.restore();
+    c.fillStyle = x.sev === "ok" ? P.quiet : P.ink; c.font = "600 40px " + SANS;
     c.fillText(num(Math.round(x.n * ease(a(st, DUR)))), gx + 18, gy + 62);
+    if (x.tier) { c.font = "500 11px ui-monospace, Menlo, monospace"; c.fillStyle = SEV[x.sev]; c.fillText(x.tier.toUpperCase(), gx + tw - 16 - c.measureText(x.tier.toUpperCase()).width, gy + 28); }
     c.fillStyle = P.quiet; c.font = "400 14.5px " + SANS;
     wrap(c, x.label, tw - 36).forEach(function (l, j) { c.fillText(l, gx + 18, gy + 92 + j * 20); });
   });
@@ -1109,21 +1173,31 @@ def checksum(canonical):  # c=: base36 of CRC32 over the canonical string, mod 3
     return out
 
 
+def evidence_text(counts):
+    return ", ".join("%s %s" % (fmt(n), label) for n, label in zip(counts, EMAIL_OUTCOMES) if n)
+
+
+def email_evidence(f):
+    return [(rid, f[rid]["evidence"]) for rid in EMAIL_RULES if rid in f and "evidence" in f[rid]]
+
+
 def share_links(f, meta):  # the share link, v1, for each route: the card's numbers only, no name. s= sessions and p= agent actions per agent (a's order, sums to n) are on the card too
     letters = "".join(LETTERS[a] for a in AGENT_NAMES if AGENT_NAMES[a] in meta["agents"].split(" + "))
     k = ".".join(str(f[c[0]]["count"]) if c[0] in f else "0" for c in CHECKS)
     canon = "v=1&a=%s&n=%d&d=%d&k=%s&s=%d&p=%s" % (letters, meta["calls"], meta.get("days", 0), k, meta["sessions"], ".".join(str(x) for x in meta["split"]))
+    if email_evidence(f):
+        canon += "&e=" + ".".join(str(n) for rid in EMAIL_RULES for n in f.get(rid, {}).get("evidence", [0] * 5))
     return {r: "%s?%s&c=%s%s%s" % (SHARE_R, canon, checksum(canon), UTM, r) for r in ROUTES}
 
 
-def need_parts(f):
-    if not f:
-        return "All %d" % len(CHECKS), "checks clean"
-    return "%d of %d" % (len(f), len(CHECKS)), "check%s a look" % (" needs" if len(f) == 1 else "s need")
 
 
 def x_post(f, meta):  # the prefilled X post, built from the top two non-zero checks in the card's labels, ending with the share link
     top = [" ".join((fmt(n), lab)) for _, _, n, lab in tile_rows(f) if n][:2]
+    for rid, counts in email_evidence(f):
+        for i, (key, _, _, _) in enumerate([row for row in tile_rows(f) if row[2]][:2]):
+            if key == rid:
+                top[i] += " (" + evidence_text(counts) + ")"
     text = X_TEXTS["some" if top else "zero"].format(top=" and ".join(top), checks=len(CHECKS), actions=plural(meta["calls"], "agent action"), link=share_links(f, meta)["x"])
     return X_POST + quote(text, safe="")
 
@@ -1138,43 +1212,50 @@ def foot_text(meta):  # the card's foot: sessions, the agent split when there ar
 
 
 def card_data(f, meta):  # what the card shows and nothing else: agents, counts, dates, the 10 tiles. No names, paths, commands or projects
-    b, r = need_parts(f)
-    return {"title": "My %s" % (meta["agents"] if meta["sessions"] else "AI agent"), "actions": meta["calls"],
+    evidence = [("Request or script" if rid == "email_out" else "Form or request") + " · " + evidence_text(counts) for rid, counts in email_evidence(f)]
+    return {**({"evidence": evidence} if evidence else {}), "title": "My %s" % (meta["agents"] if meta["sessions"] else "AI agent"), "actions": meta["calls"],
             "sub": "%s%s" % (plural(meta["calls"], "agent action"), ", " + meta["span"] if meta["span"] else ""),
-            "need_b": b, "need_r": r, "ok": not f, "foot": foot_text(meta),
-            "tiles": [{"n": n, "label": lab, "sev": sev} for _, sev, n, lab in tile_rows(f)], "links": share_links(f, meta)}
+            "tiers": [{"n": n, "label": TIER[v][1], "sev": v} for v, n in tiers(f)] or [{"n": len(CHECKS), "label": "checks clean", "sev": "ok"}],
+            "ok": not f, "foot": foot_text(meta),
+            "tiles": [{"n": n, "label": lab, "sev": sev, **({"tier": TIER[sev][0]} if sev in TIER else {})} for _, sev, n, lab in tile_rows(f)], "links": share_links(f, meta)}
 
 
 def summary(f, meta):  # the block your agent shows you: agent names, counts and dates only, nothing from your files
     head = " · ".join(filter(None, ["Excellent free scan", meta["agents"], meta["span"], plural(meta["calls"], "action")]))
     rows = ["  %-40s %7s" % (c[2], fmt(f[c[0]]["count"]) if c[0] in f else "0") for c in CHECKS]
-    return "\n".join([head] + rows + ["Run yours free: excellent.so/scan"])
+    evidence = [next(c[2] for c in CHECKS if c[0] == rid) + " — " + evidence_text(counts) for rid, counts in email_evidence(f)]
+    return "\n".join([head, tier_text(f)] + rows + evidence + ["Run yours free: excellent.so/scan"])
 
 
 def render(f, meta, anon=None):  # anon: replaces every real name, for a sample report (not used in a scan)
     e = lambda s: html.escape(shown(s))
-    tiles = "".join('<div class="tile%s"><b>%s</b>%s</div>' % ("" if sev != "ok" else " ok", fmt(n), e(lab)) for _, sev, n, lab in tile_rows(f))
-    cards = ""
+    tiles = "".join('<div class="tile %s">%s<b>%s</b>%s%s</div>' % (sev, ICON[sev] if sev in TIER else "", fmt(n), e(lab), '<em>%s</em>' % TIER[sev][0] if sev in TIER else "") for _, sev, n, lab in tile_rows(f))
+    card_evidence = "".join("<p>%s</p>" % e(line) for line in card_data(f, meta).get("evidence", []))
+    cards, group = "", None
     for c in sorted([c for c in CHECKS if c[0] in f], key=lambda c: ["high", "medium", "low"].index(f[c[0]]["severity"])):
         x, ex = f[c[0]], ""
+        if x["severity"] != group:
+            group = x["severity"]
+            cards += '<div class="tgroup"><h3>%s</h3><span class="c">%d</span><p>%s</p></div>\n' % (TIER[group][0], dict(tiers(f))[group], {"high": "Act on these first.", "medium": "Worth checking this week.", "low": "Normal for many setups. Check they were meant."}[group])
         for s in x["examples"]:
             txt = anon.text(s) if anon else s["text"]
             proj = anon.name("project", s["project"]) if anon and s["project"] else s["project"]
             if txt:
                 ex += "<li><code>%s</code><small>%s</small></li>" % (e(txt), e(" · ".join(filter(None, [
-                    AGENT_NAMES[s["agent"]], day(s["ts"]), proj, "" if s["outcome"] == "ran" else s["outcome"]]))))
-        cards += ('<details class="find %s" open><summary><span class="sev"><i></i>%s</span><h3>%s</h3><span class="n">%s</span></summary>'
+                    AGENT_NAMES[s["agent"]], day(s["ts"]), proj, ("local script input" if s.get("detail") == "script input" else {"ran": "tool reported success", "unknown": "result unknown", "failed": "tool reported failure"}.get(s["outcome"], s["outcome"]) if c[0] in EMAIL_RULES else "" if s["outcome"] == "ran" else s["outcome"])]))))
+        cards += ('<details class="find %s" open><summary>%s<span class="sev">%s</span><h3>%s</h3><span class="n">%s</span></summary>'
                   '<div class="fb"><p class="what">%s</p><dl class="pair"><div><dt class="label">What this means</dt><dd>%s</dd></div>'
                   '<div><dt class="label">What to do</dt><dd>%s</dd></div></dl>%s%s</div></details>\n') % (
-                  x["severity"], x["severity"], e(c[2]), fmt(x["count"]), e(anon.detail(x["detail"]) if anon else x["detail"]), e(c[4]), e(c[5]),
-                  '<p class="app">%s<span>%s</span></p>' % (MARK, e(APP[c[0]])) if c[0] in APP else "",
+                  x["severity"], ICON[x["severity"]], TIER[x["severity"]][0], e(c[2]), fmt(x["count"]), e(anon.detail(x["detail"]) if anon else x["detail"]), e(c[4]), e(c[5]),
+                  '<div class="fix"><div class="ft">%s<p><b>%s</b><span>%s</span></p></div><a class="btn" href="%s">Download Excellent%s</a></div>' % (
+                      MARK, FIX.get(c[0], "Stop it next time with Excellent for Mac"), e(APP[c[0]]), html.escape(DOWNLOAD + "&utm_content=" + c[0]), ARROW) if c[0] in APP else "",
                   '<div class="exs"><p class="label">Recent examples</p><ul class="ex">%s</ul></div>' % ex if ex else "")
     clean = "".join("<li>%s</li>" % e(c[2]) for c in CHECKS if c[0] not in f)
     who = "you@example.com" if anon else ", ".join(re.sub(r"^(.).*@(.).*?(\.\w+)$", r"\1•••@\2•••\3", x) for x in EMAILS) or "no email found"
     m = {k: e(fmt(v) if isinstance(v, int) else v) for k, v in meta.items() if k != "split"}
     title = e("My %s" % (meta["agents"] if meta["sessions"] else "AI agent"))
     sub = e("%s%s" % (plural(meta["calls"], "agent action"), ", " + meta["span"] if meta["span"] else ""))
-    need = "<b>%d of %d</b> checks %s a look" % (len(f), len(CHECKS), "needs" if len(f) == 1 else "need") if f else "<b>All %d checks clean</b>" % len(CHECKS)
+    need = "".join('<span class="%s">%s<b>%d</b> %s</span>' % (v, ICON[v], n, TIER[v][1]) for v, n in tiers(f)) or '<span class="ok">%s<b>All %d checks clean</b></span>' % (ICON["ok"], len(CHECKS))
     data = json.dumps(card_data(f, meta), separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     sha = base64.b64encode(hashlib.sha256(SCRIPT_JS.encode("utf-8")).digest()).decode()
     CSP = CSP_FMT % sha
@@ -1187,15 +1268,15 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
 <header class="top"><div class="wrap">{LOCKUP}<span class="label">Free check-up · {m['date']}</span></div></header>
 <main class="wrap"><a class="back" href="#">← Back to the full report</a>
 <section class="hero"><h1>Your agents' check-up</h1><p class="lede">What your AI coding agents did on this Mac, read from their own logs on {m['date']}. This script showed your agent only a short summary: counts, agent names, dates and where this page is. Nothing else it read left this Mac.</p></section>
-<section class="score" id="card"><div class="score-in">{LOCKUP}<h2>{title} <span class="nw">check-up</span><span class="sub"><span class="sep"> · </span>{sub}</span></h2><p class="need{'' if f else ' ok'}"><i></i>{need}</p>
-<div class="grid">{tiles}</div><div class="foot"><small>{e(foot_text(meta))}</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
+<section class="score" id="card"><div class="score-in">{LOCKUP}<h2>{title} <span class="nw">check-up</span><span class="sub"><span class="sep"> · </span>{sub}</span></h2><p class="need">{need}</p>
+<div class="grid">{tiles}</div>{card_evidence}<div class="foot"><small>{e(foot_text(meta))}</small><a href="{html.escape(SHARE)}">Run yours free: excellent.so/scan{ARROW}</a></div></div></section>
 <p class="share"><a class="btn2" href="#card">Show only the card{ARROW}</a><span>Sized for a screenshot, and safe to share: the card holds counts, agent names and dates only, with no emails, sites, folders, commands or keys. Everything below is just for you.</span></p>
 <section class="tools" id="share"><p class="label">Share your card</p>
 <div class="row"><button type="button" class="btn2" id="bvid">Save video</button><button type="button" class="btn2" id="bimg">Save image</button><button type="button" class="btn2" id="bcopy">Copy share link</button><a class="btn2" href="{xhref}" target="_blank" rel="noopener noreferrer">Post on X{ARROW}</a></div>
 <p class="hint">Attach the video you just saved. The post already has your link in it.</p>
 <code id="lnk">{copylink}</code><p id="sstat" class="hint" role="status"></p><canvas id="vid" hidden></canvas>
 <p class="hint">This page sends nothing. Save video and Save image make the file on your Mac. The share link holds the card's numbers only: counts, agent names, the days your logs span, your session count and your agent actions per agent. It has no name, path or email.</p></section>
-<section class="sec" id="found"><div class="head"><p class="label">Just for you <span class="pill">Private</span></p><h2>What we found</h2><p class="lede">What happened, why it matters, and what you can do yourself. Examples are masked: your email shows as ‹your email›.</p></div>
+<section class="sec" id="found"><div class="head"><p class="label">Just for you <span class="pill">Private</span></p><h2>What we found</h2><p class="lede">Ranked from what to fix now to what is good to know. Each one says what happened, what you can do yourself, and what Excellent for Mac does about it. Examples are masked: your email shows as ‹your email›.</p></div>
 {cards or '<p class="lede">Nothing to flag. Your agents passed every check.</p>'}
 {'<div class="cleanbox"><p class="label">Came back clean</p><ul class="clean">%s</ul></div>' % clean if clean else ''}</section>
 <section class="cta" id="mac"><div><p class="label">{MARK}Excellent for Mac</p><h2>Manage at agent speed</h2><p class="lede">Your agents run hundreds of steps you never see. Excellent holds every one to your rules, and stops the risky ones or asks you first.</p>
@@ -1203,7 +1284,7 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
 <ul class="tiers"><li><span class="pill solid">Free</span><b>See what your agents did</b><p>This page is a one-time look back. Excellent for Mac shows the same findings whenever you scan, with no account needed.</p></li>
 <li><span class="pill">Pro</span><b>Stop it as it happens</b><p>It blocks or asks before risky actions, turns your rules into the Mac's own sandbox, scans in the background and alerts you.</p><p>Pro is $6 a month or $60 a year. Pro is sold in the US for now.</p></li>
 <li class="req"><p>For Macs with Apple silicon and macOS 14 or later. Excellent for Mac today; a version for Linux servers comes next, then Windows.</p></li></ul></section>
-<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page sends nothing and loads nothing. Its one small script only draws your card on this page. Your agent saw only the short summary the script printed.</p></div><div class="method">
+<section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page sends nothing and loads nothing. Its one small script only draws your card on this page. The script printed a short summary for your agent.</p></div><div class="method">
 <div><h3>How this check worked</h3><p>Your agent saved a Python script where you could read it (~/excellent-free-scan/scan.py), checked it, and ran it. It read {e(plural(meta['sessions'], 'session'))} ({m['gb']} of logs) in {m['secs']}, {e(plural(meta['rulefiles'], 'instruction file'))} with {e(plural(meta['rules'], 'rule'))} it can check (never delete, never open, never run), and your hook settings. It looked for {e(who)} as your email.</p></div>
 <div><h3>What it never did</h3><p>It used no network and changed no file except this page. It kept no key or email, and never opened Documents, Desktop, Downloads, iCloud, Pictures, Movies, Music, the Mail, Messages, Safari and Photos data or app containers in Library, other drives, or a folder your rules name as never to open or read, once it had read that rule. This page loads nothing and sends nothing: Save video and Save image make the file on your Mac, and the share link holds the card's numbers only.</p></div>
 <div><h3>Limits</h3><p>Logs go back only as far as your agents keep them (Claude Code: 30 days unless you change it). Keys count only when they have a known shape; test and example keys are left out. The rules are the Excellent app's, simplified, so counts can differ a little.</p></div>
@@ -1228,29 +1309,44 @@ def run(args):
     except Exception:  # no process pool in some sandboxes: one log at a time
         results = [scan_file(j) for j in jobs]
     by, f = {}, {}
+    email_calls = {}
     for r in results:
         if r["agent"] == "grok":
             r["start"], r["end"] = heads[r["path"]][1:]
         for ev in r["events"]:
-            if ev["outcome"] != "blocked" and not ev["untold"]:
+            if (ev["rule"] in EMAIL_RULES or ev["outcome"] != "blocked") and not ev["untold"]:
                 ev.update(agent=r["agent"], project=project_of(r["cwd"]), ts=ev["ts"] or r["start"])
-                by.setdefault(ev["rule"], []).append(ev)
+                if ev["rule"] in EMAIL_RULES and ev["call"] and ev["ts"]:
+                    key = (r["agent"], ev["call"], ev["ts"], ev["rule"], ev["detail"])
+                    old = email_calls.get(key)
+                    if old is None or (old["outcome"] == "unknown" and ev["outcome"] != "unknown"):
+                        email_calls[key] = ev
+                else:
+                    by.setdefault(ev["rule"], []).append(ev)
+    for ev in email_calls.values():
+        by.setdefault(ev["rule"], []).append(ev)
     n = plural
     last = lambda l: day(max(x["ts"] for x in l)) or "recently"
 
     def add(rid, evs, detail, sev=None, examples=None):
         seen, ex = set(), []
         for x in sorted(evs, key=lambda x: x["ts"], reverse=True) if examples is None else []:
-            if x["text"][:70] not in seen and len(ex) < 3:
-                seen.add(x["text"][:70])
+            key = (x["text"][:70], x["outcome"])
+            if key not in seen and len(ex) < 3:
+                seen.add(key)
                 ex.append(x)
         f[rid] = {"count": len(evs), "detail": detail, "examples": ex if examples is None else examples,
                   "severity": sev or next(c[1] for c in CHECKS if c[0] == rid)}
-    l = by.get("email_out")
-    if l:
-        hs = sorted({h for x in l for h in x["hosts"]})
-        add("email_out", l, "%s put your email in requests to %s, most recently on %s.%s" % (n(len(l), "command"), n(max(1, len(hs)), "website"),
-            last(l), " Sites: " + ", ".join(hs[:8]) + (" and more." if len(hs) > 8 else ".") if hs else ""))
+    for rule in EMAIL_RULES:
+        events = by.get(rule, [])
+        if events:
+            counts = [0] * len(EMAIL_OUTCOMES)
+            for ev in events:
+                index = 0 if ev["detail"] == "script input" else {"failed": 2, "blocked": 3, "ran": 4}.get(ev["outcome"], 1)
+                counts[index] += 1
+            detail = evidence_text(counts) + ". These local records do not establish receipt by a website."
+            add(rule, events, detail)
+            f[rule]["evidence"] = counts
     keys, kex = {}, []
     for r in sorted(results, key=lambda r: r["end"], reverse=True):
         if r["keys"]:
@@ -1263,7 +1359,6 @@ def run(args):
         add("secrets_in_logs", [{}] * len(keys), "%s that %s in plain text in %s: %s." % (n(len(keys), "key"), "looks real is" if len(keys) == 1 else "look real are",
             n(len(kex), "log file"), ", ".join("%s ×%d" % (k, kinds.count(k)) for k in dict.fromkeys(kinds))), examples=kex[:5])
     summaries = {
-        "public_submit": lambda l: "%s your email went into a website form or request, most recently on %s." % (n(len(l), "time"), last(l)),
         "secret_files": lambda l: "%s touched SSH keys, .env files or your keychain." % n(len(l), "agent action"),
         "force_push": lambda l: "%s, most recently on %s." % (n(len(l), "force push", "force pushes"), last(l)),
         "no_verify": lambda l: "%s skipped or moved your git hooks." % n(len(l), "git command"),

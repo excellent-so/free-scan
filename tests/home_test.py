@@ -80,12 +80,12 @@ try:
     block = lines[i:]
     check(block[:1] == ["Excellent free scan · Claude Code + Codex + Grok Build · Nov 10 – Nov 16 · 8 actions"] if block else False,
           "summary header: agents, dates, actions (got %r)" % (block[:1],))
-    check(block[-1:] == ["Run yours free: excellent.so/scan"] and len(block) == 12, "summary: header, 10 rows, 'Run yours free' last")
+    check(block[-1:] == ["Run yours free: excellent.so/scan"] and len(block) == 14, "summary: header, tier line, 10 counts, outcome detail, 'Run yours free' last")
     rest = "\n".join(block).replace("excellent.so/scan", "")
     check(not re.search(r"[/~@‹]", rest) and not leaks(rest), "summary holds no path, email or account name")
     counts = {m.group(1).strip(): int(m.group(2).replace(",", "")) for m in (re.match(r"  (.+?)\s+([\d,]+)$", l) for l in block) if m}
     want = {"API keys are sitting in your agent logs": 2, "Your hooks fail silently": 1, "Never-delete folders were touched": 1,
-            "Your own rules were broken": 1, "Your email was sent to websites": 1, "Agents force-pushed": 2}
+            "Your own rules were broken": 1, "Your email in request commands or scripts": 1, "Agents force-pushed": 2}
     check(all(counts.get(k) == v for k, v in want.items()), "the checks that show paths fired (%s)" % counts)
 
     check(not leaks(page), "no account name or email anywhere in report.html")
@@ -94,7 +94,7 @@ try:
           "report shows home paths as ~ and log folder names with ‹you›")
     card = re.search(r'<section class="score" id="card">(.*?)</section>', page, re.S)
     ctext = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", card.group(1)))).strip() if card else ""
-    check(ctext.startswith("My Claude Code + Codex + Grok Build check-up · 8 agent actions, Nov 10 – Nov 16 8 of 10 checks need a look"),
+    check(ctext.startswith("My Claude Code + Codex + Grok Build check-up · 8 agent actions, Nov 10 – Nov 16 5 to fix now 2 to review 1 good to know"),
           "card leads with agents and actions, then checks (got %r)" % ctext[:110])
     check(ctext.endswith("Run yours free: excellent.so/scan"), "card ends with 'Run yours free: excellent.so/scan'")
     check(card and re.findall(r'href="([^"]*)"', card.group(1)) == [html.escape(SHARE)], "card's one link is the utm link")
@@ -106,13 +106,13 @@ try:
     cd = json.loads(blk.group(1)) if blk else {}
     links = cd.get("links", {})
     link = links.get("copy", "")
-    check(re.fullmatch(r"https://excellent\.so/r\?v=1&a=cxg&n=8&d=7&k=\d+(\.\d+){9}&s=\d+&p=\d+(\.\d+){2}&c=[0-9a-z]{4}&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy", link) is not None,
+    check(re.fullmatch(r"https://excellent\.so/r\?v=1&a=cxg&n=8&d=7&k=\d+(\.\d+){9}&s=\d+&p=\d+(\.\d+){2}&e=\d+(\.\d+){9}&c=[0-9a-z]{4}&utm_source=free-scan&utm_medium=share&utm_campaign=launch&utm_content=copy", link) is not None,
           "share link matches the v1 format, 3 agents, 8 actions, 7 days (%s)" % link)
     qs = dict(x.split("=") for x in link.split("?")[1].split("&"))
     check(sum(int(x) for x in qs.get("p", "x").split(".") if x.isdigit()) == 8 and qs.get("s", "").isdigit() and int(qs["s"]) >= 3, "link carries the session count and agent actions per agent (sum = actions)")
     check(not leaks(link) and not leaks(blk.group(1) if blk else "x") and not re.search(r"[~@‹]|/users|%2f|\\\\", (link + blk.group(1)).lower() if blk else "x"),
           "share link and card JSON hold no account name, path or email")
-    check(set(cd) == {"title", "actions", "sub", "need_b", "need_r", "ok", "foot", "tiles", "links"} and all(set(t) == {"n", "label", "sev"} for t in cd.get("tiles", [])),
+    check(set(cd) == {"title", "actions", "sub", "tiers", "ok", "foot", "tiles", "links", "evidence"} and all(set(t) - {"tier"} == {"n", "label", "sev"} for t in cd.get("tiles", [])),
           "card JSON holds only the card's fields (title, counts, labels)")
     xl = re.search(r'href="(https://x\.com/intent/post\?text=[^"]*)"', page)
     check(xl is not None and not leaks(xl.group(1)) and __import__("urllib.parse").parse.unquote(xl.group(1)).endswith(links.get("x", "?")), "X post holds no name and ends with the share link")
