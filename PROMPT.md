@@ -4,7 +4,7 @@ Paste everything in the box below into Claude Code or Codex, started in any fold
 user's own agent logs and opens a local report (`~/excellent-free-scan/report.html`).
 
 - Script: `scan.py` in this folder, 100,338 bytes, Python 3.9+ standard library only.
-- SHA-256 of the script: `a90f663d2fcbb70dfa64464f84eb9d4a0d6570229e6b5f677f5210d4595b301a`. The same hash is listed at excellent.so/scan and in the excellent-so/free-scan
+- SHA-256 of the script: `913ca0407d7e7b0d7e38707a8c438b8d50383430a95f7e09632edf0018984cb7`. The same hash is listed at excellent.so/scan and in the excellent-so/free-scan
   repo, so you can check your copy.
 - The extractor copies the script out of the conversation's own log, so the agent doesn't have to retype
   100 KB (about 30,000 output tokens and three to six minutes). If it can't, the agent
@@ -18,7 +18,7 @@ Please run the Excellent free scan for me: a read-only check of what my AI codin
 
 Steps:
 1. Save the script. Run the extractor below as it is. It copies the script between the two EXCELLENT-FREE-SCAN lines from this conversation's own log into ~/excellent-free-scan/scan.py. If it prints anything other than "saved", create that file yourself with the script text, exactly as written.
-2. Check it. Run `shasum -a 256 ~/excellent-free-scan/scan.py 2>/dev/null | cut -c1-64`. It must print a90f663d2fcbb70dfa64464f84eb9d4a0d6570229e6b5f677f5210d4595b301a. If it doesn't, stop and tell me.
+2. Check it. Run `shasum -a 256 ~/excellent-free-scan/scan.py 2>/dev/null | cut -c1-64`. It must print 913ca0407d7e7b0d7e38707a8c438b8d50383430a95f7e09632edf0018984cb7. If it doesn't, stop and tell me.
 3. In three short bullets, tell me what the script reads, what it writes, and whether it uses the network. You already have its text in this message, so you don't need to print the file.
 4. Run it: `python3 ~/excellent-free-scan/scan.py` (usually a few seconds; a few minutes if you have many GB of logs).
 5. Open the report: `open ~/excellent-free-scan/report.html 2>/dev/null || echo "not opened"`. If it prints "not opened", tell me the report is at ~/excellent-free-scan/report.html.
@@ -1338,7 +1338,7 @@ def render(f, meta, anon=None):  # anon: replaces every real name, for a sample 
 <section class="cta" id="mac"><div><p class="label">{MARK}Excellent for Mac</p><h2>Manage at agent speed</h2><p class="lede">Your agents run hundreds of steps you never see. Excellent holds every one to your rules, and stops the risky ones or asks you first.</p>
 <div class="go"><a class="btn" href="{html.escape(DOWNLOAD)}">Get Excellent for Mac{ARROW}</a><p class="fine">Scanning is free. With Pro, it blocks or asks before the risky actions it checks for.</p></div></div>
 <ul class="tiers"><li><span class="pill solid">Free</span><b>See what your agents did</b><p>This page is a one-time look back. Excellent for Mac shows the same findings whenever you scan, with no account needed.</p></li>
-<li><span class="pill">Pro</span><b>Stop it as it happens</b><p>It blocks or asks before risky actions, turns your rules into the Mac's own sandbox, scans in the background and alerts you.</p><p>Pro is $6 a month or $60 a year. Pro is sold in the US for now.</p></li>
+<li><span class="pill">Pro</span><b>Stop it as it happens</b><p>It blocks or asks before risky actions, turns your rules into the Mac's own sandbox, scans in the background and alerts you.</p><p>Pro is $6 a month or $60 a year. Pro is sold in most countries.</p></li>
 <li class="req"><p>For Macs with Apple silicon and macOS 14 or later. Excellent for Mac today; a version for Linux servers comes next, then Windows.</p></li></ul></section>
 <section class="sec" id="how"><div class="head"><p class="label">Method and privacy</p><h2>It all ran on your Mac</h2><p class="lede">This page sends nothing and loads nothing. Its one small script only draws your card on this page. The script printed a short summary for your agent.</p></div><div class="method">
 <div><h3>How this check worked</h3><p>Your agent saved a Python script where you could read it (~/excellent-free-scan/scan.py), checked it, and ran it. It read {e(plural(meta['sessions'], 'session'))} ({m['gb']} of logs) in {m['secs']}, {e(plural(meta['rulefiles'], 'instruction file'))} with {e(plural(meta['rules'], 'rule'))} it can check (never delete, never open, never run), and your hook settings. It looked for {e(who)} as your email.</p></div>
