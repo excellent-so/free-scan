@@ -1,6 +1,6 @@
 # Excellent free scan
 
-The free scan is a read-only check of what your AI coding agents did on your Mac, read from their own logs. It
+The free scan is a read-only check of what your AI agents did on your Mac, read from their own logs. It
 covers Claude Code, Codex and Grok Build. You paste one prompt into Claude Code or Codex. Your agent saves a Python
 script, checks its SHA-256, tells you what it does and runs it. The script writes one report on your Mac,
 `~/excellent-free-scan/report.html`, and prints a short summary for your agent to show you.
