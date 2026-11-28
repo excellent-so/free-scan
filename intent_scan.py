@@ -291,6 +291,10 @@ def same_rule(a, b):  # at least half of the smaller set shared, and at least tw
     return shared >= 2 and min(len(a), len(b)) > 0 and shared * 2 >= min(len(a), len(b))
 
 
+FLAG_TERMS = set(terms("high severity critical blocker blocking issue must fix fixed before merge ship violates violation violating regression "
+                        "break breaks requirement spec contract safe this that problem bug"))
+
+
 RULE_IDENT = re.compile(r"""
     \b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_?(?:BLOCKED|BLOCK_?LIST|DENY_?LIST|DENIED|BANNED|EXCLUDED|EXCLUDE|PROTECTED_(?:TRAITS?|ATTRIBUTES?|CLASS(?:ES)?)|FORBIDDEN|DISALLOWED|SUPPRESSED|RESTRICTED|IGNORED)(?:_[A-Z0-9]+)*\b
   | \b(?:BLOCKED|BLOCK_?LIST|DENY_?LIST|DENIED|BANNED|EXCLUDED|PROTECTED|FORBIDDEN|DISALLOWED|SUPPRESSED|RESTRICTED|IGNORED)_[A-Z0-9_]+\b
@@ -1041,9 +1045,16 @@ def analyze(T):  # {check: [example]}: every finding, with its masked sentence; 
         a = T.agents[aid]
         if not a["handback"]:
             continue
-        for s in dict.fromkeys(sentences(a["handback"])):
+        sents, prev = list(dict.fromkeys(sentences(a["handback"]))), False
+        for i, s in enumerate(sents):
             if not is_reviewer_flag(s):
+                prev = False
                 continue
+            if len([t for t in terms(s) if t not in FLAG_TERMS]) < 2 and i:  # "This must be fixed before merge." goes with the sentence before
+                if prev:
+                    continue
+                s = sents[i - 1] + " " + s
+            prev = True
             ft = terms(s)
             need = max(2, min(3, (len(ft) + 2) // 3))
             names = [x.lower().rsplit("/", 1)[-1] for x in FILE_TOKEN.findall(s)]
@@ -1563,31 +1574,26 @@ def render(f, meta):
 <footer><div class="wrap">{LOCKUP}<span>A free check by Excellent · {m['date']}</span></div></footer></body></html>"""
 
 
-DETAIL = {
-    "failed_pass": "%s that checks pass came after the last test run before it had failed.",
-    "unbacked_pass": "%s that checks pass came with no test run before it in that session.",
-    "narrow_pass": "%s that the whole suite passes came after test runs that were all narrowed.",
-    "approval": "%s an approval that no message of yours in that session gives.",
-    "agent_rule": "%s that an agent introduced reached a sub-agent's instructions, an instruction file or a plan.",
-    "open_decision": "%s marked as someone else's, then edited and reported done.",
-    "constraint": "%s were followed by edits that did what they ruled out.",
-    "reviewer_flag": "%s from a review sub-agent had nothing after them that answers them.",
-    "objection": "%s said openly.",
+DETAIL = {  # what was found, for one and for many
+    "failed_pass": ("1 report that checks pass came after the last test run before it had failed.",
+                    "%s reports that checks pass came after the last test run before each had failed."),
+    "unbacked_pass": ("1 report that checks pass had no test run before it in its session.", "%s reports that checks pass had no test run before them in their session."),
+    "narrow_pass": ("1 report that the whole suite passes came after test runs that were all narrowed.",
+                    "%s reports that the whole suite passes came after test runs that were all narrowed."),
+    "approval": ("1 report claims an approval that no message of yours in that session gives.", "%s reports claim approvals that no message of yours in those sessions gives."),
+    "agent_rule": ("1 rule an agent introduced reached a sub-agent's instructions, an instruction file or a plan.",
+                   "%s rules agents introduced reached sub-agents' instructions, instruction files or plans."),
+    "open_decision": ("1 decision an agent marked as someone else's was then edited and reported done.",
+                      "%s decisions agents marked as someone else's were then edited and reported done."),
+    "constraint": ("1 instruction not to do something was followed by edits that did it.", "%s instructions not to do something were followed by edits that did it."),
+    "reviewer_flag": ("1 warning from a review sub-agent had nothing after it that answers it.", "%s warnings from review sub-agents had nothing after them that answers them."),
+    "objection": ("1 objection was said openly.", "%s objections were said openly."),
 }
-NOUN = {"failed_pass": "report", "unbacked_pass": "report", "narrow_pass": "report", "approval": ("report claims", "reports claim"),
-        "agent_rule": "rule", "open_decision": "decision", "constraint": ("instruction", "instructions"), "reviewer_flag": "warning",
-        "objection": "objection"}
 
 
 def detail(rid, n):
-    noun = NOUN[rid]
-    t = plural(n, noun) if isinstance(noun, str) else "%s %s" % (fmt(n), noun[0] if n == 1 else noun[1])
-    d = DETAIL[rid] % t
-    if rid == "constraint" and n == 1:
-        d = d.replace(" were followed", " was followed")
-    if rid == "reviewer_flag" and n == 1:
-        d = d.replace("after them that answers them", "after it that answers it")
-    return d[0].upper() + d[1:]
+    one, many = DETAIL[rid]
+    return one if n == 1 else many % fmt(n)
 
 
 def run(args):
