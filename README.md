@@ -13,6 +13,7 @@ This repository holds the script and the prompt, so you can read both before you
 - `share-format.json`: the share link's format (v1), with worked examples; `build_share_format.py` regenerates it.
 - `SHA256SUMS`: the SHA-256 of `scan.py` and `PROMPT.md`.
 - `tests/`: tests that run in a fake home folder.
+- `intent_scan.py`, `INTENT-PROMPT.md` and `build_intent_prompt.py`: a second free script, the Intent scan (below).
 
 ## Run it
 
@@ -162,6 +163,96 @@ report, and that the share card and the printed summary hold only agent names, c
 Logs go back only as far as your agents keep them (Claude Code: 30 days unless you change it). Keys count only when
 they have a known shape; test and example keys are left out. The rules are the Excellent app's, simplified, so counts
 can differ a little from the app's.
+
+## The Intent scan
+
+`intent_scan.py` is a second free script. It reads the same agent logs and asks a different question: did your agents
+report what they did? It sets what each agent wrote (its reports, the instructions it gave its sub-agents, the files it
+edited) against the test runs, edits and messages its logs record. It reports what was unauthorized or undisclosed,
+never why an agent did it. It writes one report on your Mac, `~/excellent-free-scan/intent-report.html`, in the same
+design as the free scan's report, and prints a short summary.
+
+Run it the same way: paste the prompt in the box in `INTENT-PROMPT.md` into Claude Code or Codex, or run
+`python3 intent_scan.py` in Terminal. The prompt saves the script to `~/excellent-free-scan/intent_scan.py` and checks
+its SHA-256 before it runs it.
+
+This version has no share link. The report has a score card you can screenshot, but no Save video, Save image, Copy
+share link or Post on X, and no script at all: its Content-Security-Policy is `default-src 'none'` with inline styles.
+
+### What it checks
+
+The Excellent app's intent rules, the parts that need only logs. Each session is read with every sub-agent it started
+(Claude Code: `<session>/subagents/agent-<id>.jsonl` and its `.meta.json`; Codex: the threads a thread spawned).
+
+- reports that checks pass with no test run before them, in the session or its sub-agents;
+- reports that checks pass when the last test run before them, by that agent or its sub-agents, failed;
+- reports that the whole suite passes when every test run before them was narrowed (`-k`, `--filter`, one file or test);
+- approvals claimed ("approved by the lead") when no message of yours in that session gives an approval;
+- a rule an agent introduced, which no message of yours and no instruction file it read says, that then reached a
+  sub-agent's instructions or was written into CLAUDE.md, AGENTS.md or a plan;
+- a decision an agent marked as someone else's ("pending approval from a lead"), then code about it edited and the
+  work reported done, with no message from you in between. It says "left open, then reported done": logs can't show
+  what shipped;
+- an agent told not to make design calls or not to touch a file, by you or by the agent that started it, whose own edits
+  then added a restriction or touched that file;
+- a review sub-agent's high-severity warning that nothing the session wrote, edited or ran afterwards mentions;
+- and, as the good outcome, open objections: an agent that declined part of the task and said so.
+
+A sentence counts only when its wording is unambiguous. Questions, plans ("I will"), negations, hedges ("probably"),
+quoted and fenced text, and other people's words relayed ("the post says") are left out. A command counts as a test run
+only when it runs a test runner or a test script, read with the free scan's shell tokenizer, so a heredoc or a `grep`
+that names `pytest` is not a run. Every one of these rules is a false positive found and fixed in the app's engine or on
+real logs, and has a test.
+
+### What it reads, writes and sends
+
+It reads the same logs as the free scan. It reads your instruction files only for their never-open rules, and honors
+them and the folders it never opens exactly as the free scan does (the code is copied from `scan.py`, so the script stays
+one file). It reads your email only to mask it. It writes one file, `~/excellent-free-scan/intent-report.html`, makes
+no network connections and prints only counts, agent names, dates, log size and where the report is. This is what it
+printed in the tests' fake home:
+
+```
+Read 18 sessions with 13 sub-agents (0.0 GB of logs) in 0 seconds.
+Report: ~/excellent-free-scan/intent-report.html
+
+Excellent free Intent scan · Claude Code + Codex · Nov 21 – Nov 29 · 18 sessions
+5 to fix now · 3 to review · 1 objection said openly
+  Checks reported passing after a failed run                   2
+  Approvals claimed that no message of yours gives             1
+  Agents did what they were told not to                        3
+  Reviewer warnings with no answer                             1
+  Rules an agent introduced reached other agents or files      2
+  Decisions left open, then reported done                      1
+  Checks reported passing with no test run                     1
+  A narrow test run reported as the whole suite                1
+  Agents said no openly                                        1
+More free checks: excellent.so/scan
+```
+
+`SHA256SUMS` lists `intent_scan.py` and `INTENT-PROMPT.md` too. To check that `INTENT-PROMPT.md` comes from this
+`intent_scan.py`: `python3 build_intent_prompt.py`, then `git diff --exit-code INTENT-PROMPT.md`.
+
+### Tests
+
+```
+python3 tests/intent_text_test.py
+python3 tests/intent_home_test.py
+python3 tests/intent_prompt_test.py
+```
+
+`intent_text_test.py` holds every case from the engine's text tests plus the rules this script adds, and checks that
+counts of 1 read as one. `intent_home_test.py` runs the script in a fake home with made-up Claude Code sessions (with
+sub-agents) and Codex threads: one case per check beside the false positives it must leave out, a session a never-open
+rule closes, and a session logged in two project folders. It checks the counts, that the account name and the email
+show nowhere, and that the report uses `scan.py`'s design and loads nothing. `intent_prompt_test.py` checks the prompt,
+its hash and its extractor.
+
+### Limits
+
+It sees only what the logs record: an approval given on GitHub, or a test run outside these sessions, doesn't show.
+Wording it can't read for sure is left out, so it misses some. The full Intent check, coming to Excellent for Mac, also
+compares the change with your base branch, runs your protected checks itself and holds a release until you decide.
 
 ## Excellent
 
