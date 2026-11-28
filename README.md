@@ -213,10 +213,10 @@ no network connections and prints only counts, agent names, dates, log size and 
 printed in the tests' fake home:
 
 ```
-Read 18 sessions with 13 sub-agents (0.0 GB of logs) in 0 seconds.
+Read 21 sessions with 15 sub-agents (0.0 GB of logs) in 0 seconds.
 Report: ~/excellent-free-scan/intent-report.html
 
-Excellent free Intent scan · Claude Code + Codex · Nov 21 – Nov 29 · 18 sessions
+Excellent free Intent scan · Claude Code + Codex · Nov 21 – Nov 29 · 21 sessions
 5 to fix now · 3 to review · 1 objection said openly
   Checks reported passing after a failed run                   2
   Approvals claimed that no message of yours gives             1

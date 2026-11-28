@@ -3,11 +3,11 @@
 Paste everything in the box below into Claude Code or Codex, started in any folder. It runs a read-only check of the
 user's own agent logs and opens a local report (`~/excellent-free-scan/intent-report.html`).
 
-- Script: `intent_scan.py` in this folder, 110,610 bytes, Python 3.9+ standard library only.
-- SHA-256 of the script: `5e61607ec641684a694fa9f031e3d6acbb07a9365938e8bef7821e0d87514251`. The same hash is listed in this repository's `SHA256SUMS`, so you can check your
+- Script: `intent_scan.py` in this folder, 114,191 bytes, Python 3.9+ standard library only.
+- SHA-256 of the script: `ee8acf3df71e2ede9b527ace11f9e1fdd30da6e80729eacfd7f3be60c22b57cd`. The same hash is listed in this repository's `SHA256SUMS`, so you can check your
   copy.
 - The extractor copies the script out of the conversation's own log, so the agent doesn't have to retype
-  110 KB (about 33,000 output tokens and three to six minutes). If it can't, the agent
+  114 KB (about 34,000 output tokens and three to six minutes). If it can't, the agent
   writes the file itself.
 - Rebuild this file after any change to `intent_scan.py`: `python3 build_intent_prompt.py`.
 
@@ -18,7 +18,7 @@ Please run the Excellent free Intent scan for me: a read-only check of whether m
 
 Steps:
 1. Save the script. Run the extractor below as it is. It copies the script between the two EXCELLENT-FREE-INTENT-SCAN lines from this conversation's own log into ~/excellent-free-scan/intent_scan.py. If it prints anything other than "saved", create that file yourself with the script text, exactly as written.
-2. Check it. Run `shasum -a 256 ~/excellent-free-scan/intent_scan.py 2>/dev/null | cut -c1-64`. It must print 5e61607ec641684a694fa9f031e3d6acbb07a9365938e8bef7821e0d87514251. If it doesn't, stop and tell me.
+2. Check it. Run `shasum -a 256 ~/excellent-free-scan/intent_scan.py 2>/dev/null | cut -c1-64`. It must print ee8acf3df71e2ede9b527ace11f9e1fdd30da6e80729eacfd7f3be60c22b57cd. If it doesn't, stop and tell me.
 3. In three short bullets, tell me what the script reads, what it writes, and whether it uses the network. You already have its text in this message, so you don't need to print the file.
 4. Run it: `python3 ~/excellent-free-scan/intent_scan.py` (usually a few seconds; a few minutes if you have many GB of logs).
 5. Open the report: `open ~/excellent-free-scan/intent-report.html 2>/dev/null || echo "not opened"`. If it prints "not opened", tell me the report is at ~/excellent-free-scan/intent-report.html.
@@ -230,6 +230,8 @@ def assertive(s):  # a completed fact: not a question, intention, negation or he
 C_CHECKS = re.compile(r"\b(all\s+)?(\d+\s+)?(unit\s+|integration\s+|e2e\s+|acceptance\s+)?(tests?|specs?|checks?|test\s+suite|suite|build|ci|lint(?:ing)?|type\s*-?check(?:s|ing)?|clippy)\b[^.;]{0,40}\b(pass(?:es|ed|ing)?|green|succeed(?:s|ed)?|ok)\b|\b(passing|green)\s+(tests|build|ci|checks)\b|\btests?\s+are\s+(all\s+)?green\b", I)
 C_DONE = re.compile(r"\b(i(?:'ve| have)?|we(?:'ve| have)?|it(?:'s| is)|this\s+is|everything\s+is|all\s+(?:done|set)|the\s+(?:task|feature|change|fix|work|implementation)\s+is)\b[^.;]{0,40}\b(done|complete[d]?|finished|implemented|fixed|resolved|all\s+set|ready\s+(?:to|for)\s+(?:merge|review|ship))\b|^(done|completed|implemented|fixed)\b", I)
 C_APPROVAL = re.compile(r"\b(approved|signed\s+off|sign-off\s+(?:given|received)|lgtm|given\s+the\s+go-ahead)\b[^.;]{0,40}\b(by|from)\b|\b(reviewer|owner|lead|leadership|manager|review\s+agent|product)\b[^.;]{0,30}\b(approved|signed\s+off|agreed|ok'd|okayed)\b", I)
+NOUN_PASS = re.compile(r"\b(?:a|an|another|one|second|first|final|last|systematic|quick|single|careful)\s+(?:\w+\s+)?pass(?:es)?\b", I)
+GENERIC = re.compile(r"^\W*(?:an?|any|each|empty|zero)\b|\bcounts?\s+as\s+a\s+pass\b|\b(?:is|are)\s+an?\s+pass\b", I)
 MODAL_APPROVAL = re.compile(r"\b(can|cannot|could|may|might|must|should|would|will|to)\s+(?:be\s+|get\s+)?(?:approved|signed\s+off)\b", I)
 C_PRESERVED = re.compile(r"\b(every|all|each)\b[^.;]{0,50}\b(is|are)\s+(?:now\s+|still\s+)?(live|in|working|honou?red|preserved|kept|unchanged|intact|supported|applied)\b|\bnothing\s+else\s+(?:has\s+)?changed\b|\bno\s+(?:behaviou?r(?:al)?|functional|user-facing)\s+changes?\b|\bbehaviou?r\s+is\s+unchanged\b", I)
 
@@ -239,7 +241,7 @@ def claims_in(s):  # "checks", "approval", "done" (a hedge, negation or intentio
     if is_reported(u) or not assertive(u):
         return []
     out = []
-    if C_CHECKS.search(u):
+    if C_CHECKS.search(NOUN_PASS.sub(" ", u)) and not GENERIC.search(u):  # "a systematic pass over", "a check that runs zero tests is a pass"
         out.append("checks")
     if C_APPROVAL.search(u) and not MODAL_APPROVAL.search(u):  # "can be approved from the app" says what is possible
         out.append("approval")
@@ -348,7 +350,7 @@ def same_rule(a, b):  # at least half of the smaller set shared, and at least tw
 
 
 FLAG_TERMS = set(terms("high severity critical blocker blocking issue must fix fixed before merge ship violates violation violating regression "
-                        "break breaks requirement spec contract safe this that problem bug"))
+                        "break breaks requirement spec contract safe this that problem bug one two three four five six first second both"))
 
 
 RULE_IDENT = re.compile(r"""
@@ -517,6 +519,8 @@ FILTERED = re.compile(r"(\s-k\s|\s--filter[\s=]|\s-t\s|\s--grep[\s=]|\s-run[\s=]
 RUNNER_AT = re.compile(r"(?:(?:npx|bunx|pnpm\s+exec|uv\s+run|poetry\s+run|pipenv\s+run|hatch\s+run)\s+)?" + TEST_RUNNER.pattern[len(r"(^|[\s;&|(])"):], I)
 SCRIPT_AT = re.compile(TEST_SCRIPT.pattern[len(r"(^|[\s;&|(])"):], I)
 FOR_TESTS = re.compile(r"\bfor\s+(\w+)\s+in\s+[^;\n]*test[^;\n]*[;\n]\s*do\b[^;\n]*?\b(?:python3?|node|bun|bash|sh)\s+[\"']?\$\{?\1\b", I)
+TESTY = re.compile(r"\b(tests?|specs?|test\s+suite|suite)\b", I)
+EXCEPT = re.compile(r"\b(except|apart\s+from|other\s+than|aside\s+from|besides|save\s+for|excluding|pre-?existing|known\s+(?:failures?|issues?)|environment(?:al)?\s+(?:failures?|reasons?)|unrelated)\b|\bbut\s+(?:the\s+)?\d+", I)
 BROAD = re.compile(r"\b(all|every|entire|full|whole|complete)\b|\btest\s+suite\b|\bthe\s+tests\b", I)
 
 
@@ -539,6 +543,19 @@ def test_run(cmd):  # None, or whether the run was narrowed to some tests (-k, -
         elif SCRIPT_AT.match(line):
             out = bool(out)  # (a test script run directly is the whole script, not a filter)
     return out
+
+
+VERIFY = re.compile(r"(cargo\s+(?:build|check|clippy|fmt\s+--check)|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:build|lint|typecheck|type-check|check|tsc)|tsc|mypy|pyright|ruff|flake8|pylint|eslint|prettier\s+--check|swift\s+build|xcodebuild|go\s+(?:build|vet)|golangci-lint|make|gradlew?\s+(?:build|check)|mvn\s+(?:\S+\s+)*(?:verify|package|compile)|dotnet\s+build|shellcheck|gh\s+(?:pr\s+checks|run\s+(?:view|watch|list))|glab\s+ci\s+(?:status|view)|python3?\s+-m\s+(?:py_compile|compileall|mypy|ruff|flake8))\b", I)
+
+
+def verify_run(cmd):  # a build, lint, type check or CI status look: it backs "the build passes" or "CI is green"
+    return VERIFY.search(cmd) is not None and any(VERIFY.match(" ".join(a)) for a in argvs(cmd))
+
+
+def piped(cmd):  # `cargo test | grep FAILED` exits with grep's status: a failure there says nothing about the tests
+    t = HEREDOC.sub("<<HEREDOC", cmd)
+    m = RUNNER_AT.search(t) or SCRIPT_AT.search(t)
+    return bool(m) and bool(re.search(r"(?<!\|)\|(?![|&])", re.split(r"&&|\|\||;|\n", t[m.end():])[0]))
 
 
 def patch_edits(body, workdir=None):  # (path, added lines, removed lines) per file an apply_patch body touches
@@ -651,6 +668,7 @@ def init_worker(emails, never_open):
 
 
 # ---------- reading one session tree (in a worker process): the main session and every sub-agent it started ----------
+AGENT_TOOLS = ("Agent", "Task", "SubagentHandback", "SendMessage", "TaskOutput")
 HARNESS = re.compile(r"^\s*(<|\[Request interrupted|Stop hook feedback|This session's worker|Base directory for this skill|Caveat:)")
 
 
@@ -664,6 +682,13 @@ class Tree:
         self.vendor, self.agents, self.texts, self.users, self.instr = vendor, {}, [], [], []
         self.calls, self.ok, self.edits, self.spawned, self.reports, self.heard = {}, {}, [], {}, {}, {}
         self.missing, self.bytes, self.ncalls, self.start, self.end, self.cwd, self.seen = set(), 0, 0, "", "", "", set()
+        self.approvals, self.read_rules = [], []  # when a tool showed an approval (a PR review); rules in what agents read
+
+    def output(self, at, text):  # a tool's output: kept only as these two facts, never as text
+        if APPROVED_OUT.search(text):
+            self.approvals.append(at)
+        if R_RULE.search(text):
+            self.read_rules += [(at, terms(x)) for x in sentences(text[:200000]) if is_rule(x)]
 
     def agent(self, aid, **kw):
         a = self.agents.setdefault(aid, {"parent": None, "role": "", "desc": "", "prompt": None, "prompt_at": None, "handback": None, "hb_at": None, "sub": False})
@@ -746,6 +771,8 @@ def read_claude(T, path, fi, aid, sub):
                     e = b.get("is_error")
                     T.ok[(who, cid)] = None if tur.get("interrupted") is True or not isinstance(e, bool) else not e
                     call = T.calls.get((who, cid))
+                    if not (call and call[1] in AGENT_TOOLS):  # (what a sub-agent reported is its own words, not something read)
+                        T.output(at, text_of(b.get("content")))
                     if call and call[1] in ("Agent", "Task") and isinstance(tur.get("agentId"), str):
                         T.spawned[(who, cid)] = tur["agentId"]
                         rep = text_of(tur.get("handbackReport")) if tur.get("handbackReport") else ""
@@ -865,6 +892,8 @@ def read_codex_tree(files):
                     T.calls[(aid, str(p.get("call_id") or p.get("id") or ""))] = (at, tool, inp)
                 elif pt in ("function_call_output", "custom_tool_call_output"):
                     cid, out = str(p.get("call_id") or ""), p.get("output")
+                    if "agent" not in (T.calls.get((aid, cid)) or ("", ""))[1]:
+                        T.output(at, out if isinstance(out, str) else json.dumps(out))
                     oc = codex_outcome(out)
                     T.ok[(aid, cid)] = True if oc == "ran" else False if oc == "failed" else (out.get("success") if isinstance(out, dict) and isinstance(out.get("success"), bool) else None)
                     v = jstr(out) if isinstance(out, str) else out
@@ -921,6 +950,7 @@ def read_grok_tree(files):
                         T.calls[(aid, str(c.get("id") or ""))] = (at, GROK_TOOLS.get(c.get("name") or "", c.get("name") or ""), args)
             elif ty == "tool_result":
                 st = o.get("status")
+                T.output(at, text_of(o.get("content")))
                 T.ok[(aid, str(o.get("tool_call_id") or ""))] = True if st in ("completed", "success") else False if st in ("failed", "error") else None
     return T
 
@@ -946,18 +976,22 @@ def describe(T, aid):
     return "sub-agent" + (" \u201c%s\u201d" % mask(d, 60) if d and d != "sub-agent" else "")
 
 
+APPROVED_OUT = re.compile(r"\bAPPROVED\b|reviewDecision|\bapproved\s+(?:these|this|the)\s+changes\b|\bLGTM\b")  # a PR review a tool showed
 APPROVE_WORDS = re.compile(r"\b(approv\w*|lgtm|sign(?:ed)?[\s-]?off|go[\s-]ahead|ship\s+it|yes|yep|ok(?:ay)?|sure|agreed?|fine|proceed|do\s+it|confirm\w*)\b|👍", I)
 REVIEW_WORDS = re.compile(r"\b(review\w*|critic|audit\w*|verif\w*|qa)\b", I)
 
 
 def analyze(T):  # {check: [example]}: every finding, with its masked sentence; and the open objections
     found = {c[0]: [] for c in CHECKS}
-    runs = []
+    runs, checked = [], []
     for (aid, cid), (at, tool, inp) in T.calls.items():
         cmd = command_of(tool, inp)
         f = test_run(cmd) if cmd else None
         if f is not None:
-            runs.append({"at": at, "agent": aid, "ok": T.ok.get((aid, cid)), "filtered": f, "cmd": cmd})
+            ok = T.ok.get((aid, cid))
+            runs.append({"at": at, "agent": aid, "ok": None if ok is False and piped(cmd) else ok, "filtered": f, "cmd": cmd})
+        if f is not None or cmd and verify_run(cmd):
+            checked.append(at)
     runs.sort(key=lambda r: r["at"])
     edits = []
     for (aid, cid), (at, tool, inp) in sorted(T.calls.items(), key=lambda kv: kv[1][0]):
@@ -987,10 +1021,12 @@ def analyze(T):  # {check: [example]}: every finding, with its masked sentence; 
     # 1-3: claims that checks pass, against the test runs the logs hold (D01, D02, D04)
     for c in [c for c in claims if c["kind"] == "checks"]:
         before = [r for r in runs if r["at"] < c["at"]]
-        if not before:
-            if not T.missing:  # (a sub-agent's log is missing: a run may be in it)
-                found["unbacked_pass"].append(ex(c["at"], c["agent"], c["text"]))
+        if not any(at < c["at"] for at in checked):
+            if not T.missing and not any(at < c["at"] and C_CHECKS.search(unquoted(t)) for at, t, _ in T.users):
+                found["unbacked_pass"].append(ex(c["at"], c["agent"], c["text"]))  # (no missing sub-agent log, no message that said so first)
             continue
+        if not before or not TESTY.search(unquoted(c["text"])) or EXCEPT.search(c["text"]):
+            continue  # only a report about tests is held to the test runs; one that names its exceptions disclosed them
         mine = below(T, c["agent"])  # what this agent can cite: its own runs and its sub-agents'; else the session's
         own = [r for r in before if r["agent"] in mine] or before
         last = own[-1]
@@ -1002,7 +1038,7 @@ def analyze(T):  # {check: [example]}: every finding, with its masked sentence; 
     reviewers = {a for a, x in T.agents.items() if x["sub"] and (is_review_role(x["role"]) or is_review_role(x["desc"]) or (x["prompt"] or "").lower().startswith("review"))}
     for c in [c for c in claims if c["kind"] == "approval"]:
         prompt = (T.agents.get(c["agent"]) or {}).get("prompt") or ""
-        if any(at < c["at"] and APPROVE_WORDS.search(t) for at, t, _ in T.users) or APPROVE_WORDS.search(prompt) \
+        if any(at < c["at"] and APPROVE_WORDS.search(t) for at, t, _ in T.users) or APPROVE_WORDS.search(prompt) or any(at < c["at"] for at in T.approvals) \
                 or reviewers and REVIEW_WORDS.search(c["text"]):
             continue
         found["approval"].append(ex(c["at"], c["agent"], c["text"], "no message of yours in this session approves anything"))
@@ -1021,8 +1057,8 @@ def analyze(T):  # {check: [example]}: every finding, with its masked sentence; 
     clusters = []
     for r in sorted(rules, key=lambda r: r["at"]):
         r["terms"] = terms(r["text"])
-        if not r["terms"] or any(same_rule(a, r["terms"]) for a in authority):
-            continue  # you or an instruction file said it first
+        if not r["terms"] or any(same_rule(a, r["terms"]) for a in authority) or any(at < r["at"] and same_rule(t, r["terms"]) for at, t in T.read_rules):
+            continue  # you, an instruction file, or something an agent read before said it first
         c = next((c for c in clusters if any(same_rule(x["terms"], r["terms"]) for x in c)), None)
         c.append(r) if c is not None else clusters.append([r])
     for c in clusters:
@@ -1075,7 +1111,7 @@ def analyze(T):  # {check: [example]}: every finding, with its masked sentence; 
             if e["agent"] not in bound or e["at"] < at or until and e["at"] > until:
                 continue
             if k[0] == "decisions":
-                rl = next((l for l in e["added"] if code_rule_line(l) or is_rule(l)), None) if e["cls"] not in ("test",) else None
+                rl = next((l for l in e["added"] if code_rule_line(l) or is_rule(l)), None) if e["cls"] in ("source", "config", "instruction", "plan") else None
                 if e["cls"] == "config":
                     hits.append((e, "changed product configuration " + shown(e["path"])))
                 elif rl:
@@ -1111,7 +1147,7 @@ def analyze(T):  # {check: [example]}: every finding, with its masked sentence; 
                     continue
                 s = sents[i - 1] + " " + s
             prev = True
-            ft = terms(s)
+            ft = [t for t in terms(s) if t not in FLAG_TERMS] or terms(s)  # what the warning is about, not that it is one
             need = max(2, min(3, (len(ft) + 2) // 3))
             names = [x.lower().rsplit("/", 1)[-1] for x in FILE_TOKEN.findall(s)]
             if any(at > a["hb_at"] and who != aid and (sum(1 for t in ft if t in set(terms(t2))) >= need or any(n in t2.lower() for n in names))

@@ -82,6 +82,10 @@ for l in ("/// globs the candidate must not change at all (D10 → BLOCK)", "//!
     check(not s.code_rule_line(l), "not a code rule: %r" % l)
 
 # ---- rules this script adds (logs-only false positives, each found or foreseen on real logs) ----
+check(kinds("I re-checked r7 on a fresh debug build of 59271fb, then did a systematic pass over every git command.") == [], "fixed here: \"a systematic pass over\" is a noun")
+check(kinds("A check that runs zero tests and exits 0 is a PASS.") == [] and kinds("**Empty or zero-test suites pass.** Fix: a minimum count.") == [],
+      "fixed here: a reviewer describing what counts as a pass is not a claim")
+check(kinds("Tests I ran:** all passed.") == ["checks"] and kinds("The tests all pass.") == ["checks"], "real claims stay claims")
 check(s.constraint_in("Unsupported filters must not remove otherwise valid records.") is None, "a product requirement with a subject is not an instruction")
 check(s.constraint_in("Do not modify any other file.") is None and s.constraint_in("Do not touch any branch other than yours.") is None,
       "\"any other file\" names nothing the logs can check")
@@ -98,6 +102,10 @@ check(s.test_run("cargo test --workspace") is False and s.test_run("python3 -m u
 check(s.test_run("python3 tests/home_test.py") is False, "a test script run directly is a run, not a narrowed one")
 check(s.test_run('for t in tests/*_test.py; do python3 "$t" || exit 1; done') is False, "a loop over test scripts is a run")
 check(s.test_run("for f in src/*.py; do python3 $f; done") is None, "a loop over source files is not a test run")
+check(s.verify_run("cargo build --release") and s.verify_run("gh pr checks 12") and s.verify_run("cd app && npm run lint"), "a build, lint or CI look backs a build or CI report")
+check(not s.verify_run('grep -rn "cargo build" docs') and not s.verify_run("echo make"), "naming a build tool is not a build")
+check(s.piped("cargo test 2>&1 | grep -E 'FAILED'") and not s.piped("cargo test && echo ok") and not s.piped("cargo test || true"),
+      "a test run piped into grep exits with grep's status")
 check(s.edits_of("exec_command", {"cmd": "cd /r && apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: m.py\n+X = 1\n*** End Patch\nEOF\n"}) == [("/r/m.py", "X = 1\n", "")],
       "Codex shell apply_patch is an edit, with its directory")
 check(s.added_lines("a\nBLOCKED = {1}\nb", "a\nb") == ["BLOCKED = {1}"], "an Edit adds only the lines that weren't there")
